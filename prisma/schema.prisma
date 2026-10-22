@@ -1,0 +1,350 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x"]
+}
+
+enum Role {
+  business_owner
+  head_office
+  manager
+  kiosk
+}
+
+enum SiteStatus {
+  active
+  inactive
+}
+
+enum EmployeeStatus {
+  active
+  inactive
+  left
+}
+
+enum PayType {
+  hourly
+  salaried
+}
+
+enum AttendanceStatus {
+  normal
+  exception
+  corrected
+  reviewed
+}
+
+enum WeekApprovalStatus {
+  open
+  under_review
+  approved
+  exported
+}
+
+model User {
+  id             String     @id @default(cuid())
+  firstName      String?
+  lastName       String?
+  name           String
+  email          String     @unique
+  username       String?    @unique
+  passwordHash   String?
+  role           Role       @default(business_owner)
+  status         String     @default("active")
+  avatarInitials String     @default("BO")
+  sessionVersion Int        @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  locations      Location[]
+  resetTokens    PasswordResetToken[]
+}
+
+model Location {
+  id              String         @id @default(cuid())
+  businessOwnerId String
+  businessOwner   User           @relation(fields: [businessOwnerId], references: [id], onDelete: Cascade)
+  managerId       String?        @unique
+  name            String
+  town            String
+  address         String
+  city            String?
+  state           String?
+  country         String?        @default("UK")
+  postalCode      String?
+  phone           String?
+  email           String?
+  timeZone        String         @default("Europe/London")
+  weekStart       String         @default("monday")
+  status          SiteStatus     @default(active)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  kiosks          KioskDevice[]
+  employees       Employee[]
+  shifts          Shift[]
+  attendance      AttendanceRecord[]
+  approvals       WeeklyApproval[]
+  rotas           Rota[]
+  auditEvents     AuditEvent[]
+
+  @@index([businessOwnerId])
+}
+
+model KioskDevice {
+  id               String    @id @default(cuid())
+  locationId       String
+  location         Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  name             String
+  registeredAt     DateTime  @default(now())
+  lastActiveAt     DateTime?
+  status           String    @default("active")
+  registrationCode String?
+  codeExpiresAt    DateTime?
+
+  @@index([locationId])
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  employeeNumber String         @unique
+  firstName      String
+  lastName       String
+  email          String         @unique
+  phone          String
+  jobTitle       String
+  primarySiteId  String
+  primarySite    Location       @relation(fields: [primarySiteId], references: [id], onDelete: Cascade)
+  managerId      String?
+  payType        PayType        @default(hourly)
+  hourlyRate     Float?
+  salaryAnnual   Float?
+  startDate      String
+  status         EmployeeStatus @default(active)
+  leavingDate    String?
+  leavingReason  String?
+  pinSet         Boolean        @default(true)
+  pin            String?
+  pinHash        String?
+  createdAt      DateTime       @default(now())
+
+  shifts         Shift[]
+  attendance     AttendanceRecord[]
+
+  @@index([primarySiteId])
+}
+
+model Shift {
+  id                 String   @id @default(cuid())
+  employeeId         String
+  employee           Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  siteId             String
+  site               Location @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date               String
+  startTime          String
+  endTime            String
+  unpaidBreakMinutes Int      @default(30)
+  role               String
+  notes              String?
+  createdAt          DateTime @default(now())
+
+  @@index([siteId])
+  @@index([employeeId])
+}
+
+model Rota {
+  id          String    @id @default(cuid())
+  siteId      String
+  site        Location  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  weekStart   String
+  status      String    @default("draft") // draft, published, locked
+  publishedAt DateTime?
+  lockedAt    DateTime?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([siteId, weekStart])
+  @@index([siteId])
+}
+
+model AttendanceRecord {
+  id                 String           @id @default(cuid())
+  employeeId         String
+  employee           Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  siteId             String
+  site               Location         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date               String
+  shiftId            String?
+  scheduledStartTime String?
+  scheduledEndTime   String?
+  source             String           @default("clock_event") // clock_event, manager_manual, manager_correction
+  grossMinutes       Int              @default(0)
+  totalBreakMinutes  Int              @default(0)
+  workedMinutes      Int              @default(0)
+  exceptionsJson     String           @default("[]")
+  status             AttendanceStatus @default(normal)
+  correctionReason   String?
+  correctedBy        String?
+  correctedAt        String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @default(now()) @updatedAt
+
+  events             ClockEvent[]
+  audits             AttendanceAudit[]
+
+  @@index([siteId])
+  @@index([employeeId])
+}
+
+model AttendanceAudit {
+  id                 String           @id @default(cuid())
+  attendanceRecordId String
+  attendanceRecord   AttendanceRecord @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+  employeeId         String
+  changedBy          String
+  changedAt          DateTime         @default(now())
+  action             String           // CREATE, UPDATE
+  changesJson        String           @db.Text
+  reason             String           @db.Text
+
+  @@index([attendanceRecordId])
+  @@index([employeeId])
+}
+
+model ClockEvent {
+  id                 String           @id @default(cuid())
+  attendanceRecordId String
+  attendanceRecord   AttendanceRecord @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+  type               String
+  timestamp          String
+  source             String           @default("kiosk")
+  deviceId           String?
+
+  @@index([attendanceRecordId])
+}
+
+model WeeklyApproval {
+  id                       String             @id @default(cuid())
+  siteId                   String
+  site                     Location           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  weekStart                String
+  status                   WeekApprovalStatus @default(open)
+  reviewedEmployeeIds      String             @db.Text
+  ownerReviewedEmployeeIds String             @db.Text
+  managerApprovedBy        String?
+  managerApprovedAt        String?
+  ownerReviewStarted       Boolean            @default(false)
+  ownerReviewStartedAt     String?
+  approvedBy               String?
+  approvedAt               String?
+  reopenedReason           String?
+  reopenedBy               String?
+  reopenedAt               String?
+  lastUpdatedBy            String
+  lastUpdatedAt            String
+
+  @@index([siteId])
+}
+
+model PayrollExport {
+  id                String   @id @default(cuid())
+  payPeriodLabel    String
+  weekStart         String
+  siteIdsJson       String   @default("[]")
+  employeeCount     Int
+  totalPayableHours Float
+  generatedBy       String
+  generatedAt       String
+  status            String   @default("completed")
+  csvData           String   @db.Text
+}
+
+model AuditEvent {
+  id            String    @id @default(cuid())
+  timestamp     String
+  userName      String
+  role          Role
+  siteId        String?
+  site          Location? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  entity        String
+  action        String
+  previousValue String?   @db.Text
+  newValue      String?   @db.Text
+  reason        String?
+  source        String
+
+  @@index([siteId])
+}
+
+model OrgSettings {
+  id                        String  @id @default("default")
+  orgName                   String  @default("Northern Table Group")
+  timeZone                  String  @default("Europe/London")
+  weekStart                 String  @default("monday")
+  defaultPayPeriod          String  @default("weekly")
+  earlyClockInMinutes       Int     @default(15)
+  lateThresholdMinutes      Int     @default(5)
+  rounding                  String  @default("exact")
+  breaksClocked             Boolean @default(true)
+  duplicateActionPrevention Boolean @default(true)
+  overtimeEnabled           Boolean @default(true)
+  weeklyOvertimeThreshold   Int     @default(40)
+  weeklyApprovalEmailReminder Boolean @default(true)
+}
+
+model AppNotification {
+  id              String    @id @default(cuid())
+  recipientRole   String    @default("management")
+  recipientUserId String?
+  employeeId      String?
+  employeeName    String
+  siteId          String
+  siteName        String
+  type            String
+  title           String
+  message         String    @db.Text
+  timestamp       String
+  read            Boolean   @default(false)
+  resolved        Boolean   @default(false)
+  resolvedAt      DateTime?
+  isWarning       Boolean   @default(false)
+  metaJson        String?   @db.Text
+  createdAt       DateTime  @default(now())
+
+  @@index([siteId])
+  @@index([recipientRole])
+  @@index([employeeId])
+  @@index([resolved])
+}
+
+model NotificationAuditLog {
+  id           String   @id @default(cuid())
+  type         String   // weekly_approval_reminder, etc.
+  recipient    String   // email or userId
+  siteId       String?
+  weekStart    String?
+  status       String   // SENT, FAILED
+  reason       String?  @db.Text
+  sentAt       DateTime @default(now())
+
+  @@index([siteId])
+  @@index([type])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([token])
+}

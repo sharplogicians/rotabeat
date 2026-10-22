@@ -1,0 +1,94 @@
+# ==========================================
+# Dependencies
+# ==========================================
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
+.env.staging
+# Keep .env.example tracked for documentation
+!.env.example
+!.env.template
+
+# ==========================================
+# Build & Output Artifacts
+# ==========================================
+/.next/
+/out/
+/build
+/dist
+tsconfig.tsbuildinfo
+next-env.d.ts.bak
+
+# ==========================================
+# Logs & Diagnostics
+# ==========================================
+/logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# Testing & Code Coverage
+# ==========================================
+/coverage
+/.nyc_output
+*.lcov
+
+# ==========================================
+# IDEs & Code Editors
+# ==========================================
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.sublime-workspace
+*.sublime-project
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# ==========================================
+# Operating System Artifacts
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Vercel & v0 Sandbox Internal Files
+# ==========================================
+.vercel/
+.snowflake/
+.v0-trash/
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+
+# ==========================================
+# Temporary & Cache Files
+# ==========================================
+*.tmp
+*.temp
+*.bak
+.eslintcache
