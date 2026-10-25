@@ -261,6 +261,34 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
 
   const cleanInput = username.toLowerCase()
 
+  // Ensure Owner and Site Manager user accounts cannot access the mobile app
+  const managerUser = await prisma.user.findFirst({
+    where: {
+      OR: [{ email: cleanInput }, { username: cleanInput }],
+    },
+  })
+
+  if (managerUser && (managerUser.role === "business_owner" || managerUser.role === "head_office" || managerUser.role === "manager")) {
+    // Check if there is an employee record for them, if not block immediately
+    const linkedEmployee = await prisma.employee.findFirst({
+      where: { email: cleanInput, status: "active" },
+    })
+
+    if (!linkedEmployee) {
+      return NextResponse.json(
+        {
+          success: false,
+          timestamp,
+          error: {
+            code: "FORBIDDEN",
+            message: "The mobile app is for employees only. Business owners and site managers must use the web portal.",
+          },
+        },
+        { status: 403 }
+      )
+    }
+  }
+
   // Search employee by email, employeeNumber, or ID
   const employee = await prisma.employee.findFirst({
     where: {
