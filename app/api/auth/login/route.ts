@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
 import { verifyPassword, hashPassword, verifyPin, hashPin, createSessionToken, getSessionCookieHeader } from "@/lib/auth"
+import { deriveCurrentAttendanceStatus } from "@/lib/attendance"
 import { logger } from "@/lib/logger"
 
 async function handleManagerSuccessResponse(user: any, request: Request, todayIso: string) {
@@ -235,10 +236,212 @@ async function handleEmployeeSuccessResponse(employee: any, secretInput: string,
   return response
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// APP LOGIN HANDLER (Mobile App Endpoint Branch)
+// ─────────────────────────────────────────────────────────────────────────────
+async function handleAppLoginRequest(body: any, request: Request, todayIso: string) {
+  const timestamp = new Date().toISOString()
+  const username = (body.username || body.identifier || "").trim()
+  const pin = (body.pin || body.password || "").trim()
+
+  // 400 Bad Request - Missing or Invalid Parameters
+  if (!username || !pin || !/^\d{4}$/.test(pin)) {
+    return NextResponse.json(
+      {
+        success: false,
+        timestamp,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Username is required and PIN must be exactly 4 digits.",
+        },
+      },
+      { status: 400 }
+    )
+  }
+
+  const cleanInput = username.toLowerCase()
+
+  // Search employee by email, employeeNumber, or ID
+  const employee = await prisma.employee.findFirst({
+    where: {
+      OR: [
+        { email: cleanInput },
+        { employeeNumber: username },
+        { employeeNumber: username.toUpperCase() },
+        { id: username },
+      ],
+    },
+    include: {
+      primarySite: true,
+    },
+  })
+
+  // 401 Unauthorized - Invalid Credentials (Employee not found or inactive)
+  if (!employee || employee.status !== "active") {
+    return NextResponse.json(
+      {
+        success: false,
+        timestamp,
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Incorrect username or 4-digit PIN. Please try again.",
+        },
+      },
+      { status: 401 }
+    )
+  }
+
+  // Validate 4-digit PIN
+  let pinValid = false
+  if (employee.pin && pin === employee.pin) {
+    pinValid = true
+  } else if (employee.pinHash) {
+    pinValid = await verifyPin(pin, employee.pinHash)
+  }
+
+  if (!pinValid) {
+    return NextResponse.json(
+      {
+        success: false,
+        timestamp,
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Incorrect username or 4-digit PIN. Please try again.",
+        },
+      },
+      { status: 401 }
+    )
+  }
+
+  // Check today's shift scheduled on rota
+  const todayShift = await prisma.shift.findFirst({
+    where: {
+      employeeId: employee.id,
+      date: todayIso,
+    },
+  })
+
+  // 403 Forbidden - No Active Shift Today
+  if (!todayShift) {
+    return NextResponse.json(
+      {
+        success: false,
+        timestamp,
+        error: {
+          code: "NO_ACTIVE_SHIFT",
+          message: "No active shift scheduled for today. Please contact your manager.",
+        },
+      },
+      { status: 403 }
+    )
+  }
+
+  // Query today's attendance record and events to determine live shift status
+  const attendanceRecord = await prisma.attendanceRecord.findFirst({
+    where: {
+      employeeId: employee.id,
+      date: todayIso,
+    },
+    include: {
+      events: {
+        orderBy: { timestamp: "asc" },
+      },
+    },
+  })
+
+  const events = attendanceRecord?.events || []
+  const currentStatus = deriveCurrentAttendanceStatus(events)
+
+  let shiftStatus = "NOT_CHECKED_IN"
+  let allowedActions: string[] = ["clock_in"]
+
+  switch (currentStatus) {
+    case "not_clocked_in":
+      shiftStatus = "NOT_CHECKED_IN"
+      allowedActions = ["clock_in"]
+      break
+    case "working":
+      shiftStatus = "CLOCKED_IN"
+      allowedActions = ["break_start", "clock_out"]
+      break
+    case "on_break":
+      shiftStatus = "ON_BREAK"
+      allowedActions = ["break_end"]
+      break
+    case "clocked_out":
+      shiftStatus = "CLOCKED_OUT"
+      allowedActions = []
+      break
+  }
+
+  // Generate session token
+  const sessionToken = createSessionToken({
+    userId: employee.id,
+    role: "employee",
+    locationId: employee.primarySiteId,
+    userName: `${employee.firstName} ${employee.lastName}`,
+  })
+
+  const response = NextResponse.json({
+    success: true,
+    timestamp,
+    data: {
+      employee: {
+        employeeId: employee.id,
+        name: `${employee.firstName} ${employee.lastName}`,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        email: employee.email,
+        role: "employee",
+        jobTitle: employee.jobTitle,
+        locationId: employee.primarySiteId,
+      },
+      todayShift: {
+        id: todayShift.id,
+        date: todayShift.date,
+        startTime: todayShift.startTime,
+        endTime: todayShift.endTime,
+        unpaidBreakMinutes: todayShift.unpaidBreakMinutes ?? 0,
+        role: todayShift.role || employee.jobTitle || "Staff",
+        status: shiftStatus,
+        allowed_actions: allowedActions,
+        alloweded_action: allowedActions,
+        late_allowed_minutes: 5,
+        "Late_allowded minutes": "5 minutes",
+      },
+    },
+  })
+
+  response.headers.set("Set-Cookie", getSessionCookieHeader(sessionToken))
+  return response
+}
+
 // POST /api/auth/login — Authenticate user (Business Owner / Manager) or Employee (via PIN)
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    const todayIso = new Date().toISOString().slice(0, 10)
+
+    // Detect if this request is from the Mobile App
+    const clientType = (
+      body.clientType ||
+      body.platform ||
+      body.source ||
+      body.client ||
+      request.headers.get("x-client-type") ||
+      request.headers.get("x-platform") ||
+      ""
+    ).toLowerCase()
+
+    const isAppRequest = clientType === "app" || clientType === "mobile" || body.loginType === "app"
+
+    if (isAppRequest) {
+      return handleAppLoginRequest(body, request, todayIso)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // WEB LOGIN FLOW (Unchanged, backwards-compatible)
+    // ─────────────────────────────────────────────────────────────────────────────
     const { identifier, password, pin, loginType } = body
 
     const secretInput = (pin || password || "").trim()
@@ -255,7 +458,6 @@ export async function POST(request: Request) {
 
     const cleanInput = identifier.trim().toLowerCase()
     const rawInput = identifier.trim()
-    const todayIso = new Date().toISOString().slice(0, 10)
 
     // ─────────────────────────────────────────────────────────────────────────────
     // PORTAL 1: OWNER / SITE MANAGER LOGIN
