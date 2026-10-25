@@ -433,9 +433,7 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
         role: todayShift.role || employee.jobTitle || "Staff",
         status: shiftStatus,
         allowed_actions: allowedActions,
-        alloweded_action: allowedActions,
         late_allowed_minutes: 5,
-        "Late_allowded minutes": "5 minutes",
       },
     },
   })
