@@ -395,10 +395,150 @@ export async function autoResolveNotifications(params: {
 }
 
 /**
+ * 5. Late Absence Detector & Auto-Marker
+ * Automatically marks an employee as absent if they have not clocked in
+ * within 5 minutes of their scheduled shift start time.
+ * Creates real-time notifications for the Business Owner and Site Manager.
+ */
+export async function detectAndMarkLateAbsences() {
+  try {
+    const now = new Date()
+    const todayIso = now.toISOString().slice(0, 10)
+    const nowMins = now.getHours() * 60 + now.getMinutes()
+    const LATE_THRESHOLD_MINUTES = 5
+
+    // Fetch active locations
+    const activeLocations = await prisma.location.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true, town: true },
+    })
+    const locationMap = new Map(activeLocations.map((l) => [l.id, `${l.name} (${l.town})`]))
+
+    // Find all shifts scheduled for today
+    const shiftsToday = await prisma.shift.findMany({
+      where: { date: todayIso },
+      include: {
+        employee: true,
+      },
+    })
+
+    for (const shift of shiftsToday) {
+      if (!shift.startTime || !shift.employee || shift.employee.status !== "active") continue
+
+      const shiftStartMins = parseTimeToMinutes(shift.startTime)
+
+      // Only check if current time is more than 5 minutes past shift start time
+      if (nowMins <= shiftStartMins + LATE_THRESHOLD_MINUTES) {
+        continue
+      }
+
+      // Check attendance record for today
+      let record = await prisma.attendanceRecord.findFirst({
+        where: {
+          employeeId: shift.employeeId,
+          date: todayIso,
+        },
+        include: {
+          events: true,
+        },
+      })
+
+      // If employee already clocked in, they are not absent
+      const hasClockIn = record?.events.some((e) => e.type === "clock_in")
+      if (hasClockIn) {
+        continue
+      }
+
+      const empName = `${shift.employee.firstName} ${shift.employee.lastName}`
+      const siteName = locationMap.get(shift.siteId) || "Site"
+      const lateMins = nowMins - shiftStartMins
+
+      const isAlreadyAbsent =
+        record &&
+        (record.exceptionsJson?.includes("absent") || record.source === "auto_absent")
+
+      if (!record) {
+        record = await prisma.attendanceRecord.create({
+          data: {
+            employeeId: shift.employeeId,
+            siteId: shift.siteId,
+            date: todayIso,
+            shiftId: shift.id,
+            scheduledStartTime: shift.startTime,
+            scheduledEndTime: shift.endTime,
+            status: "exception",
+            exceptionsJson: JSON.stringify(["absent"]),
+            source: "auto_absent",
+            correctionReason: `Automatically marked absent: 5+ minutes late for shift (${shift.startTime}) without clocking in.`,
+            workedMinutes: 0,
+            grossMinutes: 0,
+            totalBreakMinutes: 0,
+          },
+          include: {
+            events: true,
+          },
+        })
+      } else if (!isAlreadyAbsent) {
+        await prisma.attendanceRecord.update({
+          where: { id: record.id },
+          data: {
+            status: "exception",
+            exceptionsJson: JSON.stringify(["absent"]),
+            source: "auto_absent",
+            correctionReason: `Automatically marked absent: 5+ minutes late for shift (${shift.startTime}) without clocking in.`,
+          },
+        })
+      }
+
+      // Check if notification already exists to avoid duplicate spam
+      const existingNoti = await prisma.appNotification.findFirst({
+        where: {
+          employeeId: shift.employeeId,
+          siteId: shift.siteId,
+          type: "absent",
+          metaJson: { contains: shift.id },
+        },
+      })
+
+      if (!existingNoti) {
+        // Broadcasts to both Business Owner and Site Manager ("management")
+        await prisma.appNotification.create({
+          data: {
+            recipientRole: "management",
+            employeeId: shift.employeeId,
+            employeeName: empName,
+            siteId: shift.siteId,
+            siteName: siteName,
+            type: "absent",
+            title: "Employee Automatically Marked Absent",
+            message: `${empName} has been automatically marked absent at ${siteName}. Scheduled shift start was ${shift.startTime} (${lateMins} minutes late without clocking in).`,
+            timestamp: now.toISOString(),
+            isWarning: true,
+            read: false,
+            resolved: false,
+            metaJson: JSON.stringify({
+              shiftId: shift.id,
+              attendanceRecordId: record.id,
+              date: todayIso,
+              scheduledStartTime: shift.startTime,
+              link: "/attendance",
+              actionText: "Review Attendance",
+            }),
+          },
+        })
+      }
+    }
+  } catch (err) {
+    console.error("detectAndMarkLateAbsences error:", err)
+  }
+}
+
+/**
  * Combined Detector Runner
  */
 export async function runAllNotificationDetectors() {
   await Promise.all([
+    detectAndMarkLateAbsences(),
     detectMissingPunches(),
     detectShiftConflicts(),
     detectWeeklyApprovals(),

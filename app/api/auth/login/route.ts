@@ -121,6 +121,7 @@ async function handleManagerSuccessResponse(user: any, request: Request, todayIs
         endTime: todayShift.endTime,
         unpaidBreakMinutes: todayShift.unpaidBreakMinutes,
         role: todayShift.role,
+        late_allowed_minutes: 5,
       } : null,
       upcomingShift: upcomingShift ? {
         id: upcomingShift.id,
@@ -217,6 +218,7 @@ async function handleEmployeeSuccessResponse(employee: any, secretInput: string,
         endTime: todayShift.endTime,
         unpaidBreakMinutes: todayShift.unpaidBreakMinutes,
         role: todayShift.role,
+        late_allowed_minutes: 5,
       } : null,
       upcomingShift: upcomingShift ? {
         id: upcomingShift.id,
@@ -380,26 +382,44 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
   const events = attendanceRecord?.events || []
   const currentStatus = deriveCurrentAttendanceStatus(events)
 
+  const isAbsent =
+    attendanceRecord?.exceptionsJson?.includes("absent") ||
+    attendanceRecord?.source === "auto_absent" ||
+    (todayShift?.startTime &&
+      events.length === 0 &&
+      (() => {
+        const [h, m] = todayShift.startTime.split(":").map(Number)
+        const shiftStartMins = (h || 0) * 60 + (m || 0)
+        const nowObj = new Date()
+        const nowMins = nowObj.getHours() * 60 + nowObj.getMinutes()
+        return nowMins > shiftStartMins + 5
+      })())
+
   let shiftStatus = "NOT_CHECKED_IN"
   let allowedActions: string[] = ["clock_in"]
 
-  switch (currentStatus) {
-    case "not_clocked_in":
-      shiftStatus = "NOT_CHECKED_IN"
-      allowedActions = ["clock_in"]
-      break
-    case "working":
-      shiftStatus = "CLOCKED_IN"
-      allowedActions = ["break_start", "clock_out"]
-      break
-    case "on_break":
-      shiftStatus = "ON_BREAK"
-      allowedActions = ["break_end"]
-      break
-    case "clocked_out":
-      shiftStatus = "CLOCKED_OUT"
-      allowedActions = []
-      break
+  if (isAbsent) {
+    shiftStatus = "ABSENT"
+    allowedActions = []
+  } else {
+    switch (currentStatus) {
+      case "not_clocked_in":
+        shiftStatus = "NOT_CHECKED_IN"
+        allowedActions = ["clock_in"]
+        break
+      case "working":
+        shiftStatus = "CLOCKED_IN"
+        allowedActions = ["break_start", "clock_out"]
+        break
+      case "on_break":
+        shiftStatus = "ON_BREAK"
+        allowedActions = ["break_end"]
+        break
+      case "clocked_out":
+        shiftStatus = "CLOCKED_OUT"
+        allowedActions = []
+        break
+    }
   }
 
   // Generate session token

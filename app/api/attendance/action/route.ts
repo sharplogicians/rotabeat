@@ -82,6 +82,93 @@ export async function POST(request: Request) {
       )
     }
 
+    // Automatic Absent check: If employee is 5+ minutes late from scheduled shift start time
+    if (actionType === "clock_in") {
+      const shift = await prisma.shift.findFirst({
+        where: {
+          employeeId: employee.id,
+          date: dateIso,
+        },
+      })
+
+      if (shift && shift.startTime) {
+        const [sH, sM] = shift.startTime.split(":").map(Number)
+        const shiftStartMins = (sH || 0) * 60 + (sM || 0)
+        const nowMins = serverDateObj.getHours() * 60 + serverDateObj.getMinutes()
+
+        const isMarkedAbsent =
+          attendanceRecord &&
+          (attendanceRecord.exceptionsJson?.includes("absent") || attendanceRecord.source === "auto_absent")
+
+        if (isMarkedAbsent || nowMins > shiftStartMins + 5) {
+          if (!attendanceRecord) {
+            attendanceRecord = await prisma.attendanceRecord.create({
+              data: {
+                employeeId: employee.id,
+                siteId: targetSiteId,
+                date: dateIso,
+                shiftId: shift.id,
+                scheduledStartTime: shift.startTime,
+                scheduledEndTime: shift.endTime,
+                status: "exception",
+                exceptionsJson: JSON.stringify(["absent"]),
+                source: "auto_absent",
+                correctionReason: `Automatically marked absent: 5+ minutes late for shift (${shift.startTime}) without clocking in.`,
+                workedMinutes: 0,
+                grossMinutes: 0,
+                totalBreakMinutes: 0,
+              },
+              include: { events: true },
+            })
+          }
+
+          // Trigger real-time notification to Business Owner & Site Manager
+          const existingNoti = await prisma.appNotification.findFirst({
+            where: {
+              employeeId: employee.id,
+              siteId: targetSiteId,
+              type: "absent",
+              metaJson: { contains: shift.id },
+            },
+          })
+
+          if (!existingNoti) {
+            await prisma.appNotification.create({
+              data: {
+                recipientRole: "management", // Broadcasts to both Business Owner and Site Manager
+                employeeId: employee.id,
+                employeeName: `${employee.firstName} ${employee.lastName}`,
+                siteId: targetSiteId,
+                siteName: employee.primarySite?.name || "Site",
+                type: "absent",
+                title: "Employee Automatically Marked Absent",
+                message: `${employee.firstName} ${employee.lastName} was automatically marked absent at ${employee.primarySite?.name || "Site"}. Scheduled start was ${shift.startTime} (5+ minutes late without clocking in).`,
+                timestamp: serverTimestamp,
+                isWarning: true,
+                read: false,
+                resolved: false,
+                metaJson: JSON.stringify({
+                  shiftId: shift.id,
+                  attendanceRecordId: attendanceRecord.id,
+                  date: dateIso,
+                  link: "/attendance",
+                  actionText: "Review Attendance",
+                }),
+              },
+            })
+          }
+
+          return NextResponse.json(
+            {
+              success: false,
+              message: `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${shift.startTime}). Please contact your site manager.`,
+            },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
     // Upsert / Create record & clock event
     let createdEvent
     if (!attendanceRecord) {

@@ -379,11 +379,11 @@ export function classifyLiveAttendanceStatus(
     const startMins = timeToMinutes(shift.startTime)
     const endMins = timeToMinutes(shift.endTime)
 
-    if (nowMins > endMins) {
+    if (nowMins > startMins + 5) {
       return { status: "absent", label: "Absent", color: "destructive" }
     }
     if (nowMins > startMins) {
-      return { status: "late", label: "Late (Not Clocked In)", color: "warning" }
+      return { status: "late", label: "Late (Grace Period)", color: "warning" }
     }
   }
 
