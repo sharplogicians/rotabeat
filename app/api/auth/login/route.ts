@@ -422,6 +422,38 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
     }
   }
 
+  // Compute event history for today (preserving previous punches on re-login)
+  function formatEventTime(isoString: string): string {
+    try {
+      const d = new Date(isoString)
+      return d.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    } catch {
+      return isoString
+    }
+  }
+
+  const clockInEvt = events.find((e) => e.type === "clock_in")
+  const breakStartEvt = events.find((e) => e.type === "break_start")
+  const breakEndEvt = events.find((e) => e.type === "break_end")
+  const clockOutEvt = events.find((e) => e.type === "clock_out")
+
+  const history = {
+    clock_in: clockInEvt ? formatEventTime(clockInEvt.timestamp) : null,
+    break_start: breakStartEvt ? formatEventTime(breakStartEvt.timestamp) : null,
+    break_end: breakEndEvt ? formatEventTime(breakEndEvt.timestamp) : null,
+    clock_out: clockOutEvt ? formatEventTime(clockOutEvt.timestamp) : null,
+    events: events.map((e) => ({
+      id: e.id,
+      type: e.type,
+      time: formatEventTime(e.timestamp),
+      timestamp: e.timestamp,
+    })),
+  }
+
   // Generate session token
   const sessionToken = createSessionToken({
     userId: employee.id,
@@ -455,6 +487,7 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
         allowed_actions: allowedActions,
         late_allowed_minutes: 5,
       },
+      history,
     },
   })
 
