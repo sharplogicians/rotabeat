@@ -26,7 +26,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useAccessibleSites, useAppStore, useCurrentUser } from "@/lib/store"
 import type { Employee, EmployeeStatus, PayType } from "@/lib/types"
-import { Building2, Eye, EyeOff } from "lucide-react"
+import { Building2, Eye, EyeOff, Camera, X } from "lucide-react"
 
 interface EmployeeFormSheetProps {
   open: boolean
@@ -81,6 +81,8 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
   const [newPassword, setNewPassword] = React.useState("")
   const [pin, setPin] = React.useState(employee?.pin ?? "")
   const [showPin, setShowPin] = React.useState(false)
+  const [profileImage, setProfileImage] = React.useState<string>(employee?.profileImage ?? "")
+  const imageInputRef = React.useRef<HTMLInputElement>(null)
 
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -137,6 +139,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       setNewPassword("")
       setPin(employee?.pin ?? "")
       setShowPin(false)
+      setProfileImage(employee?.profileImage ?? "")
       setErrors({})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -242,6 +245,17 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
     const site = sites.find((s) => s.id === siteId)
     const isSiteManager = jobTitle === "Site Manager"
 
+    // Determine profileImage payload:
+    // - New/changed image: send the data URI
+    // - Removed image (was set, now empty): send "__REMOVE__"
+    // - Unchanged: send undefined (don't touch it)
+    let profileImagePayload: string | undefined = undefined
+    if (profileImage && profileImage !== employee?.profileImage) {
+      profileImagePayload = profileImage
+    } else if (!profileImage && employee?.profileImage) {
+      profileImagePayload = "__REMOVE__"
+    }
+
     const payload = {
       id: employee?.id,
       employeeNumber: isEdit ? employee?.employeeNumber : undefined,
@@ -250,6 +264,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       email: email.trim(),
       phone: phone.trim(),
       jobTitle: jobTitle.trim(),
+      profileImage: profileImagePayload,
       primarySiteId: siteId,
       managerId: site?.managerId ?? employee?.managerId ?? actor.id,
       payType,
@@ -292,6 +307,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
         email: data.employee.email,
         phone: data.employee.phone,
         jobTitle: data.employee.jobTitle,
+        profileImage: data.employee.profileImage ?? undefined,
         primarySiteId: data.employee.primarySiteId,
         managerId: data.employee.managerId ?? actor.id,
         payType: data.employee.payType,
@@ -332,6 +348,67 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
           </SheetDescription>
         </SheetHeader>
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-4">
+          {/* Profile Image Upload */}
+          <div className="flex flex-col items-center gap-3 pb-2">
+            <div className="relative">
+              {profileImage ? (
+                <img
+                  src={profileImage}
+                  alt="Profile preview"
+                  className="h-24 w-24 rounded-full object-cover border-2 border-border shadow-sm"
+                />
+              ) : (
+                <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center border-2 border-dashed border-border">
+                  <Camera className="h-8 w-8 text-muted-foreground" />
+                </div>
+              )}
+              {profileImage && (
+                <button
+                  type="button"
+                  onClick={() => { setProfileImage(""); if (imageInputRef.current) imageInputRef.current.value = "" }}
+                  className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-sm hover:bg-destructive/90 transition-colors"
+                  title="Remove photo"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                id="profileImageUpload"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  if (!file.type.startsWith("image/")) {
+                    toast.error("Please upload a valid image file.")
+                    return
+                  }
+                  if (file.size > 1_000_000) {
+                    toast.error("Image must be less than 1 MB.")
+                    return
+                  }
+                  const reader = new FileReader()
+                  reader.onload = () => setProfileImage(reader.result as string)
+                  reader.readAsDataURL(file)
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <Camera className="mr-2 h-4 w-4" />
+                {profileImage ? "Change Photo" : "Upload Photo"}
+              </Button>
+            </div>
+            {errors.profileImage && <p className="text-sm text-destructive">{errors.profileImage}</p>}
+          </div>
+
           <FieldGroup>
             <div className="grid grid-cols-2 gap-3">
               <Field data-invalid={Boolean(errors.firstName)}>

@@ -210,6 +210,7 @@ async function handleEmployeeSuccessResponse(employee: any, secretInput: string,
       hourlyRate: employee.hourlyRate || 0,
       salaryAnnual: employee.salaryAnnual || 0,
       locationId: employee.primarySiteId,
+      profileImage: employee.profileImage ?? null,
       assignedLocation: employee.primarySite ? { id: employee.primarySite.id, name: employee.primarySite.name, town: employee.primarySite.town } : null,
       todayShift: todayShift ? {
         id: todayShift.id,
@@ -475,6 +476,7 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
         role: "employee",
         jobTitle: employee.jobTitle,
         locationId: employee.primarySiteId,
+        profileImage: employee.profileImage ?? null,
       },
       todayShift: {
         id: todayShift.id,

@@ -14,7 +14,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Table,
   TableBody,
@@ -386,6 +386,12 @@ export default function EmployeesPage() {
                         className="flex items-center gap-3 hover:underline"
                       >
                         <Avatar className="size-8">
+                          {e.profileImage && (
+                            <AvatarImage
+                              src={e.profileImage}
+                              alt={`${e.firstName} ${e.lastName}`}
+                            />
+                          )}
                           <AvatarFallback className="text-xs">
                             {initials(e)}
                           </AvatarFallback>

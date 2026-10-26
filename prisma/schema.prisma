@@ -117,6 +117,7 @@ model Employee {
   email          String         @unique
   phone          String
   jobTitle       String
+  profileImage   String?        @db.LongText
   primarySiteId  String
   primarySite    Location       @relation(fields: [primarySiteId], references: [id], onDelete: Cascade)
   managerId      String?

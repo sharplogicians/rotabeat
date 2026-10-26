@@ -52,6 +52,7 @@ export async function GET(request: Request) {
         email: true,
         phone: true,
         jobTitle: true,
+        profileImage: true,
         primarySiteId: true,
         managerId: true,
         payType: true,
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
       email,
       phone,
       jobTitle,
+      profileImage,
       primarySiteId,
       managerId,
       payType,
@@ -102,6 +104,16 @@ export async function POST(request: Request) {
       password,
       pin,
     } = body
+
+    // Validate profile image if provided
+    if (profileImage) {
+      if (typeof profileImage !== "string" || !profileImage.startsWith("data:image/")) {
+        return NextResponse.json({ success: false, message: "Profile image must be a valid data URI (data:image/...)." }, { status: 400 })
+      }
+      if (profileImage.length > 1_400_000) {
+        return NextResponse.json({ success: false, message: "Profile image must be less than 1 MB." }, { status: 400 })
+      }
+    }
 
     if (!firstName || !firstName.trim()) {
       return NextResponse.json({ success: false, message: "First name is required." }, { status: 400 })
@@ -253,6 +265,7 @@ export async function POST(request: Request) {
         email: cleanEmail,
         phone: (phone || "").trim(),
         jobTitle: jobTitle.trim(),
+        profileImage: profileImage || null,
         primarySiteId,
         managerId: createdUserId || managerId || null,
         payType: payType === "salaried" ? "salaried" : "hourly",
@@ -272,6 +285,7 @@ export async function POST(request: Request) {
         email: true,
         phone: true,
         jobTitle: true,
+        profileImage: true,
         primarySiteId: true,
         managerId: true,
         payType: true,
@@ -329,6 +343,7 @@ export async function PUT(request: Request) {
       email,
       phone,
       jobTitle,
+      profileImage,
       primarySiteId,
       managerId,
       payType,
@@ -342,6 +357,16 @@ export async function PUT(request: Request) {
       newPassword,
       pin,
     } = body
+
+    // Validate profile image if provided
+    if (profileImage && profileImage !== "__REMOVE__") {
+      if (typeof profileImage !== "string" || !profileImage.startsWith("data:image/")) {
+        return NextResponse.json({ success: false, message: "Profile image must be a valid data URI (data:image/...)." }, { status: 400 })
+      }
+      if (profileImage.length > 1_400_000) {
+        return NextResponse.json({ success: false, message: "Profile image must be less than 1 MB." }, { status: 400 })
+      }
+    }
 
     if (!id) {
       return NextResponse.json({ success: false, message: "Employee ID is required." }, { status: 400 })
@@ -474,6 +499,7 @@ export async function PUT(request: Request) {
         email: cleanEmail,
         phone: phone !== undefined ? phone.trim() : existingEmp.phone,
         jobTitle: jobTitle ? jobTitle.trim() : existingEmp.jobTitle,
+        ...(profileImage === "__REMOVE__" ? { profileImage: null } : profileImage ? { profileImage } : {}),
         primarySiteId: primarySiteId || existingEmp.primarySiteId,
         managerId: managerId !== undefined ? managerId : existingEmp.managerId,
         payType: payType || existingEmp.payType,
@@ -493,6 +519,7 @@ export async function PUT(request: Request) {
         email: true,
         phone: true,
         jobTitle: true,
+        profileImage: true,
         primarySiteId: true,
         managerId: true,
         payType: true,

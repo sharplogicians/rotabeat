@@ -57,6 +57,7 @@ export interface Employee {
   email: string
   phone: string
   jobTitle: string
+  profileImage?: string
   primarySiteId: string
   managerId: string
   payType: PayType

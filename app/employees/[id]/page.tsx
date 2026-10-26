@@ -7,7 +7,7 @@ import { AdminShell } from "@/components/shell/admin-shell"
 import { useAppStore, useCurrentUser } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -150,6 +150,7 @@ export default function EmployeeProfilePage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
             <Avatar className="size-14">
+              {employee.profileImage && <AvatarImage src={employee.profileImage} alt={`${employee.firstName} ${employee.lastName}`} />}
               <AvatarFallback className="text-lg">{initials}</AvatarFallback>
             </Avatar>
             <div className="flex flex-col gap-1">
