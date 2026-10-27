@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (!siteId) {
       try {
         const cookieHeader = request.headers.get("cookie") || ""
-        const match = cookieHeader.match(/rotaflow_last_site=([^;]+)/)
+        const match = cookieHeader.match(/rotabeat_last_site=([^;]+)/) || cookieHeader.match(/rotaflow_last_site=([^;]+)/)
         if (match && match[1]) siteId = decodeURIComponent(match[1].trim())
       } catch { }
     }
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     // Remember the site from which user logged out
     if (finalSiteId) {
-      response.headers.append("Set-Cookie", `rotaflow_last_site=${finalSiteId}; Path=/; Max-Age=31536000; SameSite=Lax`)
+      response.headers.append("Set-Cookie", `rotabeat_last_site=${finalSiteId}; Path=/; Max-Age=31536000; SameSite=Lax`)
     }
 
     return response

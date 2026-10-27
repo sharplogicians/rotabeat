@@ -41,14 +41,14 @@ export async function sendWeeklyApprovalEmailReminder(params: EmailReminderParam
     const smtpHost = process.env.SMTP_HOST
     const smtpUser = process.env.SMTP_USER
     const smtpPass = process.env.SMTP_PASS
-    const fromEmail = process.env.EMAIL_FROM || "no-reply@rotaflow.app"
+    const fromEmail = process.env.EMAIL_FROM || "no-reply@rotabeat.app"
 
     const subject = `Weekly Timesheet Approval Due — ${siteName}`
     const htmlBody = `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 8px;">
         <h2 style="color: #0f172a; margin-top: 0;">Weekly Timesheet Approval Due</h2>
         <p>Hi <strong>${managerName}</strong>,</p>
-        <p>Your weekly timesheet for <strong>${weekStart}</strong> is ready for review and approval in <strong>RotaFlow</strong>.</p>
+        <p>Your weekly timesheet for <strong>${weekStart}</strong> is ready for review and approval in <strong>RotaBeat</strong>.</p>
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
           <tr>
             <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">Site:</td>
@@ -153,7 +153,7 @@ export async function sendEmailNotification(params: {
             },
           })
           await transporter.sendMail({
-            from: process.env.SMTP_FROM || '"RotaFlow Support" <noreply@northerntable.co.uk>',
+            from: process.env.SMTP_FROM || '"RotaBeat Support" <noreply@northerntable.co.uk>',
             to: params.to,
             subject: params.subject,
             html: params.html,

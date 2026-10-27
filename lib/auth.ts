@@ -37,7 +37,7 @@ export async function verifyPin(plain: string, hash: string): Promise<boolean> {
 
 import { createHmac, randomBytes } from "crypto"
 
-const SECRET_KEY = process.env.SESSION_SECRET || "rotaflow-default-secret-change-me-in-production"
+const SECRET_KEY = process.env.SESSION_SECRET || "rotabeat-default-secret-change-me-in-production"
 const SESSION_DURATION_MS = 12 * 60 * 60 * 1000 // 12 hours
 
 export interface SessionPayload {
@@ -77,12 +77,16 @@ export function verifySessionToken(token: string): SessionPayload | null {
 
     const [header, body, signature] = parts
 
-    // Verify signature
-    const expectedSig = createHmac("sha256", SECRET_KEY)
+    // Verify signature against primary key or legacy key (ensures zero session drop across name change)
+    const expectedSigPrimary = createHmac("sha256", SECRET_KEY)
       .update(`${header}.${body}`)
       .digest("base64url")
 
-    if (signature !== expectedSig) return null
+    const expectedSigLegacy = createHmac("sha256", "rotaflow-default-secret-change-me-in-production")
+      .update(`${header}.${body}`)
+      .digest("base64url")
+
+    if (signature !== expectedSigPrimary && signature !== expectedSigLegacy) return null
 
     // Decode and check expiry
     const payload: SessionPayload = JSON.parse(base64UrlDecode(body))
@@ -96,7 +100,7 @@ export function verifySessionToken(token: string): SessionPayload | null {
 
 // ─── Cookie helpers ─────────────────────────────────────────────────────────
 
-export const SESSION_COOKIE_NAME = "rotaflow_session"
+export const SESSION_COOKIE_NAME = "rotabeat_session"
 
 export function getSessionCookieHeader(token: string): string {
   const maxAge = SESSION_DURATION_MS / 1000
@@ -114,7 +118,7 @@ export function getClearSessionCookieHeader(): string {
 import { NextRequest } from "next/server"
 
 export function getSessionFromRequest(request: NextRequest): SessionPayload | null {
-  const cookie = request.cookies.get(SESSION_COOKIE_NAME)
+  const cookie = request.cookies.get(SESSION_COOKIE_NAME) || request.cookies.get("rotaflow_session")
   if (!cookie?.value) return null
   return verifySessionToken(cookie.value)
 }

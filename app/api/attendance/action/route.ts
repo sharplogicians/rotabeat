@@ -14,7 +14,8 @@ import { logger } from "@/lib/logger"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { employeeId, action, siteId } = body
+    const { employeeId, action, siteId, photo, source, faceMatchScore, faceVerified } = body
+    const eventSource = source || "web"
 
     if (!employeeId) {
       return NextResponse.json(
@@ -52,10 +53,35 @@ export async function POST(request: Request) {
       )
     }
 
-    // Official server timestamp - do not trust client device time
+    // Strict Block: Require registered profile image and verified face match
+    if (actionType === "clock_in" || actionType === "clock_out") {
+      if (!employee.profileImage && !employee.faceEmbedding) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "No registered photo found. Please have your manager upload a profile photo before clocking in.",
+          },
+          { status: 400 }
+        )
+      }
+
+      if (eventSource === "web") {
+        if (!faceVerified || (typeof faceMatchScore === "number" && faceMatchScore < 65)) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Biometric face verification failed. The live camera face does not match the employee's registered photo. Clocking in on another person's behalf is strictly prohibited.",
+            },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
+    // Official server timestamp - synced with local calendar date
     const serverDateObj = new Date()
     const serverTimestamp = serverDateObj.toISOString()
-    const dateIso = serverTimestamp.slice(0, 10)
+    const dateIso = serverDateObj.toLocaleDateString("en-CA") // YYYY-MM-DD in local system time
 
     const targetSiteId = siteId || employee.primarySiteId
 
@@ -73,8 +99,8 @@ export async function POST(request: Request) {
     const existingEvents = attendanceRecord?.events || []
     const currentStatus = deriveCurrentAttendanceStatus(existingEvents)
 
-    // Backend Validation Matrix check
-    const validation = validateAttendanceAction(currentStatus, actionType)
+    // Backend Validation Matrix check (enforces 1 break limit & valid transition sequence)
+    const validation = validateAttendanceAction(currentStatus, actionType, existingEvents)
     if (!validation.valid) {
       return NextResponse.json(
         { success: false, message: validation.error || "Action not allowed." },
@@ -161,6 +187,7 @@ export async function POST(request: Request) {
           return NextResponse.json(
             {
               success: false,
+              isAbsent: true,
               message: `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${shift.startTime}). Please contact your site manager.`,
             },
             { status: 400 }
@@ -170,7 +197,7 @@ export async function POST(request: Request) {
     }
 
     // Upsert / Create record & clock event
-    let createdEvent
+    let createdEvent: any
     if (!attendanceRecord) {
       // Find shift for today if scheduled
       const shift = await prisma.shift.findFirst({
@@ -193,7 +220,7 @@ export async function POST(request: Request) {
             create: {
               type: actionType,
               timestamp: serverTimestamp,
-              source: "web",
+              source: eventSource,
             },
           },
         },
@@ -208,9 +235,27 @@ export async function POST(request: Request) {
           attendanceRecordId: attendanceRecord.id,
           type: actionType,
           timestamp: serverTimestamp,
-          source: "web",
+          source: eventSource,
         },
       })
+    }
+
+    // Safely save photo and biometric verification details to database
+    if (createdEvent?.id) {
+      try {
+        await prisma.$executeRawUnsafe(
+          'UPDATE `ClockEvent` SET `photo` = COALESCE(?, `photo`), `faceMatchScore` = ?, `faceVerified` = ? WHERE `id` = ?',
+          photo || null,
+          typeof faceMatchScore === "number" ? faceMatchScore : null,
+          faceVerified ? 1 : 0,
+          createdEvent.id
+        )
+        if (photo) createdEvent.photo = photo
+        if (typeof faceMatchScore === "number") createdEvent.faceMatchScore = faceMatchScore
+        createdEvent.faceVerified = Boolean(faceVerified)
+      } catch (photoErr) {
+        logger.error("Failed to update photo/biometrics on ClockEvent", photoErr)
+      }
     }
 
     const nextStatus = getNextStateForAction(actionType)
@@ -437,6 +482,7 @@ export async function POST(request: Request) {
         timestamp: serverTimestamp,
         formattedTime,
         date: dateIso,
+        photo: createdEvent.photo || photo || null,
       },
     })
   } catch (error: any) {

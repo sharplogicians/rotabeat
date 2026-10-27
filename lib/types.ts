@@ -1,4 +1,4 @@
-// RotaFlow domain types — front-end POC only. No database, no real auth.
+// RotaBeat domain types — front-end POC only. No database, no real auth.
  import { apiUrl } from '@/lib/api';
 export type Role = "business_owner" | "head_office" | "manager" | "kiosk" | "employee"
 
@@ -58,6 +58,7 @@ export interface Employee {
   phone: string
   jobTitle: string
   profileImage?: string
+  faceEmbedding?: string | null
   primarySiteId: string
   managerId: string
   payType: PayType
@@ -93,6 +94,9 @@ export interface ClockEvent {
   timestamp: string // ISO datetime
   source: "kiosk" | "web" | "clock_event" | "manager_manual" | "manager_correction"
   deviceId?: string
+  photo?: string | null
+  faceMatchScore?: number | null
+  faceVerified?: boolean
 }
 
 export type ExceptionType =

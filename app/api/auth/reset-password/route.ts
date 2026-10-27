@@ -63,12 +63,12 @@ export async function POST(request: Request) {
 
       await sendEmailNotification({
         to: user.email,
-        subject: "RotaFlow — Password Reset Request",
+        subject: "RotaBeat — Password Reset Request",
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
             <h2 style="color: #1e293b;">Password Reset</h2>
             <p>Hello ${user.name},</p>
-            <p>You requested a password reset for your RotaFlow account. Click the button below to set a new password:</p>
+            <p>You requested a password reset for your RotaBeat account. Click the button below to set a new password:</p>
             <p style="text-align: center; margin: 30px 0;">
               <a href="${resetUrl}" style="background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
                 Reset Password

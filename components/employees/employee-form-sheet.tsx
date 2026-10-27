@@ -3,6 +3,7 @@ import { apiUrl } from '@/lib/api';
 
 import * as React from "react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import {
   Sheet,
   SheetClose,
@@ -26,7 +27,8 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useAccessibleSites, useAppStore, useCurrentUser } from "@/lib/store"
 import type { Employee, EmployeeStatus, PayType } from "@/lib/types"
-import { Building2, Eye, EyeOff, Camera, X } from "lucide-react"
+import { Building2, Eye, EyeOff, Camera, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
+import { extractFaceEmbeddingFromDataUrl } from "@/lib/face-recognition"
 
 interface EmployeeFormSheetProps {
   open: boolean
@@ -82,6 +84,17 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
   const [pin, setPin] = React.useState(employee?.pin ?? "")
   const [showPin, setShowPin] = React.useState(false)
   const [profileImage, setProfileImage] = React.useState<string>(employee?.profileImage ?? "")
+  const [faceEmbedding, setFaceEmbedding] = React.useState<number[] | null>(() => {
+    if (employee?.faceEmbedding) {
+      try {
+        return JSON.parse(employee.faceEmbedding)
+      } catch {
+        return null
+      }
+    }
+    return null
+  })
+  const [faceStatus, setFaceStatus] = React.useState<"idle" | "detecting" | "verified" | "no_face">("idle")
   const imageInputRef = React.useRef<HTMLInputElement>(null)
 
   const [submitting, setSubmitting] = React.useState(false)
@@ -140,6 +153,29 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       setPin(employee?.pin ?? "")
       setShowPin(false)
       setProfileImage(employee?.profileImage ?? "")
+      if (employee?.faceEmbedding) {
+        try {
+          setFaceEmbedding(JSON.parse(employee.faceEmbedding))
+          setFaceStatus("verified")
+        } catch {
+          setFaceEmbedding(null)
+          setFaceStatus("idle")
+        }
+      } else if (employee?.profileImage) {
+        setFaceStatus("detecting")
+        extractFaceEmbeddingFromDataUrl(employee.profileImage).then((emb) => {
+          if (emb) {
+            setFaceEmbedding(emb)
+            setFaceStatus("verified")
+          } else {
+            setFaceEmbedding(null)
+            setFaceStatus("no_face")
+          }
+        })
+      } else {
+        setFaceEmbedding(null)
+        setFaceStatus("idle")
+      }
       setErrors({})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,12 +236,17 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       }
     }
 
+    // Profile photo is compulsory
+    if (!profileImage || !profileImage.trim()) {
+      next.profileImage = "Employee photo is compulsory. Please upload a photo."
+    }
+
     if (!jobTitle.trim()) next.jobTitle = "Job title is required."
     if (!siteId) next.siteId = "Select a primary site."
     if (!startDate) next.startDate = "Start date is required."
     if (jobTitle !== "Site Manager") {
-      if (!pin.trim() || pin.trim().length < 4) {
-        next.pin = "PIN must be at least 4 digits."
+      if (!pin.trim() || pin.trim().length !== 4) {
+        next.pin = "PIN must be exactly 4 digits."
       }
     }
     if (payType === "hourly" && (!hourlyRate || Number(hourlyRate) <= 0)) {
@@ -265,6 +306,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       phone: phone.trim(),
       jobTitle: jobTitle.trim(),
       profileImage: profileImagePayload,
+      faceEmbedding: faceEmbedding ? JSON.stringify(faceEmbedding) : undefined,
       primarySiteId: siteId,
       managerId: site?.managerId ?? employee?.managerId ?? actor.id,
       payType,
@@ -349,17 +391,28 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
         </SheetHeader>
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-4">
           {/* Profile Image Upload */}
-          <div className="flex flex-col items-center gap-3 pb-2">
+          <div className="flex flex-col items-center gap-2 pb-2">
+            <span className="text-xs font-semibold text-foreground flex items-center gap-1">
+              Employee Photo <span className="text-destructive font-bold">*</span>
+            </span>
             <div className="relative">
               {profileImage ? (
                 <img
                   src={profileImage}
                   alt="Profile preview"
-                  className="h-24 w-24 rounded-full object-cover border-2 border-border shadow-sm"
+                  className={cn(
+                    "h-24 w-24 rounded-full object-cover border-2 shadow-sm",
+                    errors.profileImage ? "border-destructive ring-2 ring-destructive/20" : "border-border"
+                  )}
                 />
               ) : (
-                <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center border-2 border-dashed border-border">
-                  <Camera className="h-8 w-8 text-muted-foreground" />
+                <div
+                  className={cn(
+                    "h-24 w-24 rounded-full bg-muted flex items-center justify-center border-2 border-dashed transition-colors",
+                    errors.profileImage ? "border-destructive bg-destructive/5" : "border-border"
+                  )}
+                >
+                  <Camera className={cn("h-8 w-8", errors.profileImage ? "text-destructive" : "text-muted-foreground")} />
                 </div>
               )}
               {profileImage && (
@@ -392,7 +445,26 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
                     return
                   }
                   const reader = new FileReader()
-                  reader.onload = () => setProfileImage(reader.result as string)
+                  reader.onload = async () => {
+                    const dataUrl = reader.result as string
+                    setProfileImage(dataUrl)
+                    setFaceStatus("detecting")
+                    setErrors((prev) => {
+                      const copy = { ...prev }
+                      delete copy.profileImage
+                      return copy
+                    })
+                    const emb = await extractFaceEmbeddingFromDataUrl(dataUrl)
+                    if (emb) {
+                      setFaceEmbedding(emb)
+                      setFaceStatus("verified")
+                      toast.success("Face recognized & biometric profile generated!")
+                    } else {
+                      setFaceEmbedding(null)
+                      setFaceStatus("no_face")
+                      toast.warning("No face detected in this photo. Please ensure face is visible.")
+                    }
+                  }
                   reader.readAsDataURL(file)
                 }}
               />
@@ -406,6 +478,24 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
                 {profileImage ? "Change Photo" : "Upload Photo"}
               </Button>
             </div>
+            {faceStatus === "detecting" && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground animate-pulse">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                <span>Analyzing facial biometrics (FaceNet)...</span>
+              </div>
+            )}
+            {faceStatus === "verified" && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Face biometrics registered for auto clock-in/out</span>
+              </div>
+            )}
+            {faceStatus === "no_face" && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>No clear face detected. A front-facing photo is needed for auto verification.</span>
+              </div>
+            )}
             {errors.profileImage && <p className="text-sm text-destructive">{errors.profileImage}</p>}
           </div>
 
@@ -603,10 +693,10 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
                   <Input
                     id="employeePin"
                     type={showPin ? "text" : "password"}
-                    maxLength={6}
+                    maxLength={4}
                     placeholder="Set 4-digit PIN (e.g. 1234)"
                     value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                     aria-invalid={Boolean(errors.pin)}
                     className="pr-10 font-mono tracking-widest"
                   />

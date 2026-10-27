@@ -98,6 +98,7 @@ export default function EmployeeClockPage() {
   const [apiEmployee, setApiEmployee] = React.useState<any>(null)
   const [apiTodayShift, setApiTodayShift] = React.useState<any>(null)
   const [apiUpcomingShift, setApiUpcomingShift] = React.useState<any>(null)
+  const [apiStatus, setApiStatus] = React.useState<string | null>(null)
 
   const selectedEmployee = React.useMemo(() => {
     if (selectedEmployeeId) {
@@ -148,6 +149,7 @@ export default function EmployeeClockPage() {
           if (json.employee) setApiEmployee(json.employee)
           if (json.todayShift !== undefined) setApiTodayShift(json.todayShift)
           if (json.upcomingShift !== undefined) setApiUpcomingShift(json.upcomingShift)
+          if (json.currentStatus) setApiStatus(json.currentStatus)
         }
       }
     } catch (e) {
@@ -164,17 +166,31 @@ export default function EmployeeClockPage() {
     }
   }, [selectedEmployeeId, state.currentUserId, fetchStatus])
 
-  // Resolved display employee object
-  const activeEmployeeObj = apiEmployee || (selectedEmployee ? {
-    id: selectedEmployee.id,
-    name: `${selectedEmployee.firstName} ${selectedEmployee.lastName}`,
-    employeeNumber: selectedEmployee.employeeNumber,
-    jobTitle: selectedEmployee.jobTitle,
-    siteId: selectedEmployee.primarySiteId,
-    siteName: site?.name || "Main Location",
-    hourlyRate: selectedEmployee.hourlyRate ?? 0,
-    payType: selectedEmployee.payType,
-  } : null)
+  // Resolved display employee object with biometric profile
+  const activeEmployeeObj = React.useMemo(() => {
+    if (apiEmployee) {
+      return {
+        ...apiEmployee,
+        profileImage: apiEmployee.profileImage || selectedEmployee?.profileImage || null,
+        faceEmbedding: apiEmployee.faceEmbedding || selectedEmployee?.faceEmbedding || null,
+      }
+    }
+    if (selectedEmployee) {
+      return {
+        id: selectedEmployee.id,
+        name: `${selectedEmployee.firstName} ${selectedEmployee.lastName}`,
+        employeeNumber: selectedEmployee.employeeNumber,
+        jobTitle: selectedEmployee.jobTitle,
+        siteId: selectedEmployee.primarySiteId,
+        siteName: site?.name || "Main Location",
+        hourlyRate: selectedEmployee.hourlyRate ?? 0,
+        payType: selectedEmployee.payType,
+        profileImage: selectedEmployee.profileImage || null,
+        faceEmbedding: selectedEmployee.faceEmbedding || null,
+      }
+    }
+    return null
+  }, [apiEmployee, selectedEmployee, site])
 
   return (
     <AdminShell
@@ -300,10 +316,13 @@ export default function EmployeeClockPage() {
                 siteName: activeEmployeeObj.siteName || site?.name || "Main Location",
                 hourlyRate: activeEmployeeObj.hourlyRate ?? undefined,
                 payType: activeEmployeeObj.payType,
+                profileImage: activeEmployeeObj.profileImage || null,
+                faceEmbedding: activeEmployeeObj.faceEmbedding || null,
               }}
               todayShift={todayShift}
               upcomingShift={upcomingShift}
               initialEvents={events}
+              initialStatus={apiStatus || undefined}
               onActionComplete={() => fetchStatus(activeEmployeeObj.id)}
             />
           </div>

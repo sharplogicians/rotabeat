@@ -61,9 +61,9 @@ function rotaKey(siteId: string, weekStart: string) {
 function getPersistedSiteId(): string {
   if (typeof window !== "undefined") {
     try {
-      const saved = localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
+      const saved = localStorage.getItem("rotabeat_current_site_id") || localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotabeat_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
       if (saved) return saved
-      const match = document.cookie.match(/rotaflow_last_site=([^;]+)/)
+      const match = document.cookie.match(/rotabeat_last_site=([^;]+)/) || document.cookie.match(/rotaflow_last_site=([^;]+)/)
       if (match && match[1]) return decodeURIComponent(match[1].trim())
     } catch { }
   }
@@ -120,6 +120,7 @@ type Action =
     eventType: ClockEvent["type"]
     scheduledStartTime?: string
     scheduledEndTime?: string
+    photo?: string | null
   }
   | {
     type: "CORRECT_ATTENDANCE"
@@ -184,9 +185,9 @@ function reducer(state: AppState, action: Action): AppState {
       let persistedSiteId: string | null = null
       if (typeof window !== "undefined") {
         try {
-          persistedSiteId = localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
+          persistedSiteId = localStorage.getItem("rotabeat_current_site_id") || localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotabeat_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
           if (!persistedSiteId) {
-            const match = document.cookie.match(/rotaflow_last_site=([^;]+)/)
+            const match = document.cookie.match(/rotabeat_last_site=([^;]+)/) || document.cookie.match(/rotaflow_last_site=([^;]+)/)
             if (match && match[1]) persistedSiteId = decodeURIComponent(match[1].trim())
           }
         } catch { }
@@ -217,14 +218,14 @@ function reducer(state: AppState, action: Action): AppState {
       if (typeof window !== "undefined") {
         try {
           if (targetSiteId) {
-            localStorage.setItem("rotaflow_current_site_id", targetSiteId)
-            sessionStorage.setItem("rotaflow_current_site_id", targetSiteId)
-            document.cookie = `rotaflow_last_site=${encodeURIComponent(targetSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
+            localStorage.setItem("rotabeat_current_site_id", targetSiteId)
+            sessionStorage.setItem("rotabeat_current_site_id", targetSiteId)
+            document.cookie = `rotabeat_last_site=${encodeURIComponent(targetSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
           }
-          sessionStorage.setItem("rotaflow_user_role", action.role)
-          sessionStorage.setItem("rotaflow_user_id", action.userId)
+          sessionStorage.setItem("rotabeat_user_role", action.role)
+          sessionStorage.setItem("rotabeat_user_id", action.userId)
           if (action.profile) {
-            sessionStorage.setItem("rotaflow_user_profile", JSON.stringify(action.profile))
+            sessionStorage.setItem("rotabeat_user_profile", JSON.stringify(action.profile))
           }
         } catch { }
       }
@@ -259,9 +260,9 @@ function reducer(state: AppState, action: Action): AppState {
     case "SET_SITE": {
       if (typeof window !== "undefined" && action.siteId) {
         try {
-          localStorage.setItem("rotaflow_current_site_id", action.siteId)
-          sessionStorage.setItem("rotaflow_current_site_id", action.siteId)
-          document.cookie = `rotaflow_last_site=${encodeURIComponent(action.siteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
+          localStorage.setItem("rotabeat_current_site_id", action.siteId)
+          sessionStorage.setItem("rotabeat_current_site_id", action.siteId)
+          document.cookie = `rotabeat_last_site=${encodeURIComponent(action.siteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
         } catch { }
       }
       return { ...state, currentSiteId: action.siteId }
@@ -414,6 +415,7 @@ function reducer(state: AppState, action: Action): AppState {
         type: action.eventType,
         timestamp: DEMO_NOW.toISOString(),
         source: "kiosk",
+        photo: action.photo || null,
       }
       if (existing) {
         const events = [...existing.events, newEvent]
@@ -705,9 +707,9 @@ function reducer(state: AppState, action: Action): AppState {
         let savedSite: string | null = null
         if (typeof window !== "undefined") {
           try {
-            savedSite = localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
+            savedSite = localStorage.getItem("rotabeat_current_site_id") || localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotabeat_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
             if (!savedSite) {
-              const match = document.cookie.match(/rotaflow_last_site=([^;]+)/)
+              const match = document.cookie.match(/rotabeat_last_site=([^;]+)/) || document.cookie.match(/rotaflow_last_site=([^;]+)/)
               if (match && match[1]) savedSite = decodeURIComponent(match[1].trim())
             }
           } catch { }
@@ -720,9 +722,9 @@ function reducer(state: AppState, action: Action): AppState {
 
         if (typeof window !== "undefined" && resolvedSiteId) {
           try {
-            localStorage.setItem("rotaflow_current_site_id", resolvedSiteId)
-            sessionStorage.setItem("rotaflow_current_site_id", resolvedSiteId)
-            document.cookie = `rotaflow_last_site=${encodeURIComponent(resolvedSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
+            localStorage.setItem("rotabeat_current_site_id", resolvedSiteId)
+            sessionStorage.setItem("rotabeat_current_site_id", resolvedSiteId)
+            document.cookie = `rotabeat_last_site=${encodeURIComponent(resolvedSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
           } catch { }
         }
       }
@@ -887,9 +889,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
             let persistedSiteId: string | null = null
             if (typeof window !== "undefined") {
               try {
-                persistedSiteId = localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
+                persistedSiteId = localStorage.getItem("rotabeat_current_site_id") || localStorage.getItem("rotaflow_current_site_id") || sessionStorage.getItem("rotabeat_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
                 if (!persistedSiteId) {
-                  const match = document.cookie.match(/rotaflow_last_site=([^;]+)/)
+                  const match = document.cookie.match(/rotabeat_last_site=([^;]+)/) || document.cookie.match(/rotaflow_last_site=([^;]+)/)
                   if (match && match[1]) persistedSiteId = decodeURIComponent(match[1].trim())
                 }
               } catch { }
@@ -908,10 +910,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         } else {
           // Server returned non-OK (e.g. 401). Try sessionStorage as fallback
           // for a degraded offline experience, but this is NOT authoritative.
-          const savedRole = sessionStorage.getItem("rotaflow_user_role") as Role | null
-          const savedUserId = sessionStorage.getItem("rotaflow_user_id")
-          const savedSiteId = sessionStorage.getItem("rotaflow_current_site_id")
-          const savedProfileStr = sessionStorage.getItem("rotaflow_user_profile")
+          const savedRole = (sessionStorage.getItem("rotabeat_user_role") || sessionStorage.getItem("rotaflow_user_role")) as Role | null
+          const savedUserId = sessionStorage.getItem("rotabeat_user_id") || sessionStorage.getItem("rotaflow_user_id")
+          const savedSiteId = sessionStorage.getItem("rotabeat_current_site_id") || sessionStorage.getItem("rotaflow_current_site_id")
+          const savedProfileStr = sessionStorage.getItem("rotabeat_user_profile") || sessionStorage.getItem("rotaflow_user_profile")
           const savedProfile = savedProfileStr ? JSON.parse(savedProfileStr) : null
 
           if (savedUserId && savedRole) {

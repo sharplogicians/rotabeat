@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       let preferredSiteId: string | null = null
       try {
         const cookieHeader = request.headers.get("cookie") || ""
-        const match = cookieHeader.match(/rotaflow_last_site=([^;]+)/)
+        const match = cookieHeader.match(/rotabeat_last_site=([^;]+)/) || cookieHeader.match(/rotaflow_last_site=([^;]+)/)
         if (match && match[1]) {
           preferredSiteId = decodeURIComponent(match[1].trim())
         }

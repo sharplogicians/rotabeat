@@ -65,7 +65,7 @@ export function AppSidebar() {
             <Clock className="size-4.5" />
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="font-heading text-sm font-bold tracking-tight">RotaFlow</span>
+            <span className="font-heading text-sm font-bold tracking-tight">RotaBeat</span>
             <span className="text-[11px] text-sidebar-foreground/60">
               {isEmployee ? "Employee Portal" : "Northern Table Group"}
             </span>

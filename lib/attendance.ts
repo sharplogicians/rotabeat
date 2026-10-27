@@ -10,6 +10,7 @@ export interface AttendanceValidationResult {
 export interface ClockEventLike {
   type: string
   timestamp: string
+  photo?: string | null
 }
 
 /**
@@ -46,7 +47,8 @@ export function deriveCurrentAttendanceStatus(events: ClockEventLike[]): Employe
  */
 export function validateAttendanceAction(
   currentStatus: EmployeeAttendanceState,
-  action: AttendanceActionType
+  action: AttendanceActionType,
+  existingEvents?: ClockEventLike[]
 ): AttendanceValidationResult {
   switch (action) {
     case "clock_in": {
@@ -63,6 +65,10 @@ export function validateAttendanceAction(
     }
 
     case "break_start": {
+      // Employees are allowed only one break per shift
+      if (existingEvents && existingEvents.some((e) => e.type === "break_start" || e.type === "break_end")) {
+        return { valid: false, error: "Only one break is allowed per shift. You have already taken your break." }
+      }
       if (currentStatus === "working") {
         return { valid: true }
       }

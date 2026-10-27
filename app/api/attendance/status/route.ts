@@ -66,7 +66,7 @@ export async function GET(request: Request) {
       )
     }
 
-    const dateIso = new Date().toISOString().slice(0, 10)
+    const dateIso = new Date().toLocaleDateString("en-CA")
 
     // Today's attendance record & clock events
     const attendanceRecord = await prisma.attendanceRecord.findFirst({
@@ -141,9 +141,12 @@ export async function GET(request: Request) {
         siteId: employee.primarySiteId,
         hourlyRate: employee.hourlyRate || 0,
         payType: employee.payType,
+        profileImage: employee.profileImage || null,
+        faceEmbedding: employee.faceEmbedding || null,
       },
       currentStatus: status,
       currentStatusLabel: status === ("absent" as any) ? "Absent" : getAttendanceStateLabel(status),
+      isAbsent: status === ("absent" as any),
       todayShift: todayShift ? {
         id: todayShift.id,
         date: todayShift.date,

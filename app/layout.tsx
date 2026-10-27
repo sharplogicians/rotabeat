@@ -20,9 +20,9 @@ const body = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'RotaFlow — Workforce management, simplified.',
+  title: 'RotaBeat — Workforce management, simplified.',
   description:
-    'RotaFlow helps UK businesses build rotas, track attendance and approve payable hours without the paperwork.',
+    'RotaBeat helps UK businesses build rotas, track attendance and approve payable hours without the paperwork.',
   generator: 'v0.app',
   icons: {
     icon: [

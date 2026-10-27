@@ -10,7 +10,7 @@ async function handleManagerSuccessResponse(user: any, request: Request, todayIs
   let preferredSiteId: string | null = null
   try {
     const cookieHeader = request.headers.get("cookie") || ""
-    const match = cookieHeader.match(/rotaflow_last_site=([^;]+)/)
+    const match = cookieHeader.match(/rotabeat_last_site=([^;]+)/) || cookieHeader.match(/rotaflow_last_site=([^;]+)/)
     if (match && match[1]) {
       preferredSiteId = decodeURIComponent(match[1].trim())
     }
@@ -134,9 +134,11 @@ async function handleManagerSuccessResponse(user: any, request: Request, todayIs
     },
   })
 
-  // Set HttpOnly session cookie
+  // Set HttpOnly session cookie (both rotabeat_session and legacy rotaflow_session for total compatibility)
   response.headers.set("Set-Cookie", getSessionCookieHeader(sessionToken))
+  response.headers.append("Set-Cookie", `rotaflow_session=${sessionToken}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${12 * 60 * 60}`)
   if (assignedLocation?.id) {
+    response.headers.append("Set-Cookie", `rotabeat_last_site=${assignedLocation.id}; Path=/; Max-Age=31536000; SameSite=Lax`)
     response.headers.append("Set-Cookie", `rotaflow_last_site=${assignedLocation.id}; Path=/; Max-Age=31536000; SameSite=Lax`)
   }
 
@@ -232,8 +234,9 @@ async function handleEmployeeSuccessResponse(employee: any, secretInput: string,
     },
   })
 
-  // Set HttpOnly session cookie
+  // Set HttpOnly session cookie (both rotabeat_session and legacy rotaflow_session)
   response.headers.set("Set-Cookie", getSessionCookieHeader(sessionToken))
+  response.headers.append("Set-Cookie", `rotaflow_session=${sessionToken}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${12 * 60 * 60}`)
 
   logger.info("AUTH_LOGIN", `Employee signed in: ${employee.firstName} ${employee.lastName}`, { employeeId: employee.id })
   return response
@@ -501,7 +504,7 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const todayIso = new Date().toISOString().slice(0, 10)
+    const todayIso = new Date().toLocaleDateString("en-CA")
 
     // Detect if this request is from the Mobile App
     const clientType = (

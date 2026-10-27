@@ -53,6 +53,7 @@ export async function GET(request: Request) {
         phone: true,
         jobTitle: true,
         profileImage: true,
+        faceEmbedding: true,
         primarySiteId: true,
         managerId: true,
         payType: true,
@@ -105,14 +106,15 @@ export async function POST(request: Request) {
       pin,
     } = body
 
-    // Validate profile image if provided
-    if (profileImage) {
-      if (typeof profileImage !== "string" || !profileImage.startsWith("data:image/")) {
-        return NextResponse.json({ success: false, message: "Profile image must be a valid data URI (data:image/...)." }, { status: 400 })
-      }
-      if (profileImage.length > 1_400_000) {
-        return NextResponse.json({ success: false, message: "Profile image must be less than 1 MB." }, { status: 400 })
-      }
+    // Validate profile image is compulsory
+    if (!profileImage || typeof profileImage !== "string" || !profileImage.trim()) {
+      return NextResponse.json({ success: false, message: "Profile image is compulsory when adding an employee." }, { status: 400 })
+    }
+    if (!profileImage.startsWith("data:image/")) {
+      return NextResponse.json({ success: false, message: "Profile image must be a valid data URI (data:image/...)." }, { status: 400 })
+    }
+    if (profileImage.length > 1_400_000) {
+      return NextResponse.json({ success: false, message: "Profile image must be less than 1 MB." }, { status: 400 })
     }
 
     if (!firstName || !firstName.trim()) {
@@ -254,6 +256,16 @@ export async function POST(request: Request) {
         employeeNumber = await generateEmployeeNumber()
       }
     }
+
+    if (!isSiteManager && pin && pin.trim()) {
+      if (pin.trim().length !== 4 || !/^\d{4}$/.test(pin.trim())) {
+        return NextResponse.json(
+          { success: false, message: "Employee PIN must be exactly 4 digits." },
+          { status: 400 }
+        )
+      }
+    }
+
     const rawPin = pin && pin.trim() ? pin.trim() : null
     const hashedPin = rawPin ? await hashPin(rawPin) : null
 
@@ -303,6 +315,20 @@ export async function POST(request: Request) {
         },
       },
     })
+
+    // Persist face embedding if provided
+    if (body.faceEmbedding) {
+      try {
+        const embStr = typeof body.faceEmbedding === "string" ? body.faceEmbedding : JSON.stringify(body.faceEmbedding)
+        await prisma.$executeRawUnsafe(
+          'UPDATE `Employee` SET `faceEmbedding` = ? WHERE `id` = ?',
+          embStr,
+          employee.id
+        )
+      } catch (embErr) {
+        console.error("Failed to persist faceEmbedding on Employee creation:", embErr)
+      }
+    }
 
     // Log Audit Event
     await logAuditEvent({
@@ -488,6 +514,12 @@ export async function PUT(request: Request) {
     // Hash PIN if changed
     let hashedPin: string | undefined = undefined
     if (pin && pin.trim()) {
+      if (!isSiteManager && (pin.trim().length !== 4 || !/^\d{4}$/.test(pin.trim()))) {
+        return NextResponse.json(
+          { success: false, message: "Employee PIN must be exactly 4 digits." },
+          { status: 400 }
+        )
+      }
       hashedPin = await hashPin(pin.trim())
     }
 
@@ -537,6 +569,27 @@ export async function PUT(request: Request) {
         },
       },
     })
+
+    // Persist or clear face embedding on employee update
+    if (body.faceEmbedding) {
+      try {
+        const embStr = typeof body.faceEmbedding === "string" ? body.faceEmbedding : JSON.stringify(body.faceEmbedding)
+        await prisma.$executeRawUnsafe(
+          'UPDATE `Employee` SET `faceEmbedding` = ? WHERE `id` = ?',
+          embStr,
+          id
+        )
+      } catch (embErr) {
+        console.error("Failed to update faceEmbedding for Employee:", embErr)
+      }
+    } else if (profileImage === "__REMOVE__") {
+      try {
+        await prisma.$executeRawUnsafe(
+          'UPDATE `Employee` SET `faceEmbedding` = NULL WHERE `id` = ?',
+          id
+        )
+      } catch (embErr) {}
+    }
 
     // Log Audit Event
     const isPinReset = Boolean(hashedPin)

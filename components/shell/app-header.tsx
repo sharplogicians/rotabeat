@@ -55,9 +55,11 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
   const isOwner = state.role === "business_owner" || state.role === "head_office"
   const isEmpRole = state.role === "employee"
   const isFixedLocation = isClockPage || state.role === "manager" || state.role === "employee" || sites.length <= 1
-  const exceptions = state.attendance.filter(
-    (a) => a.status === "exception" && (isOwner || a.siteId === state.currentSiteId)
-  )
+  const exceptions = isEmpRole
+    ? []
+    : state.attendance.filter(
+        (a) => a.status === "exception" && (isOwner || a.siteId === state.currentSiteId)
+      )
 
   // Fetch live notifications from DB on mount & interval
   React.useEffect(() => {
@@ -163,8 +165,8 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
       dispatch({ type: "SET_SITE", siteId: noti.siteId })
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("rotaflow_current_site_id", noti.siteId)
-          document.cookie = `rotaflow_last_site=${encodeURIComponent(noti.siteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
+          localStorage.setItem("rotabeat_current_site_id", noti.siteId)
+          document.cookie = `rotabeat_last_site=${encodeURIComponent(noti.siteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
         } catch { }
       }
       const targetSite = state.sites.find((s) => s.id === noti.siteId)
@@ -209,8 +211,8 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                 dispatch({ type: "SET_SITE", siteId: v })
                 if (typeof window !== "undefined") {
                   try {
-                    localStorage.setItem("rotaflow_current_site_id", v)
-                    document.cookie = `rotaflow_last_site=${encodeURIComponent(v)}; Path=/; Max-Age=31536000; SameSite=Lax`
+                    localStorage.setItem("rotabeat_current_site_id", v)
+                    document.cookie = `rotabeat_last_site=${encodeURIComponent(v)}; Path=/; Max-Age=31536000; SameSite=Lax`
                   } catch { }
                 }
               }
@@ -431,14 +433,21 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                 actionLabel = "View Details"
               }
 
+              // Employees have access only to their portal (/attendance/clock) and cannot access /attendance, /approval, or /rota
+              if (isEmpRole) {
+                linkUrl = ""
+                actionLabel = ""
+              }
+
               const notiSite = state.sites.find((s) => s.id === n.siteId)
               const notiSiteName = notiSite?.name || n.siteName || ""
               const isDifferentSite = Boolean(n.siteId && n.siteId !== state.currentSiteId)
 
-              return (
-                <Link
-                  key={n.id}
-                  href={linkUrl}
+              const cardContent = (
+                <div
+                  className={`flex items-start gap-3 p-3 text-xs transition-colors hover:bg-muted/70 cursor-pointer ${
+                    !n.read ? "bg-primary/5" : ""
+                  }`}
                   onClick={() =>
                     handleNotificationClick({
                       id: n.id,
@@ -447,9 +456,6 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                       weekStart: notiWeekStart,
                     })
                   }
-                  className={`flex items-start gap-3 p-3 text-xs transition-colors hover:bg-muted/70 cursor-pointer ${
-                    !n.read ? "bg-primary/5" : ""
-                  }`}
                 >
                   <div
                     className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg ${
@@ -482,7 +488,7 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                     <p className="text-muted-foreground leading-relaxed text-[11px]">{n.message}</p>
 
                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                      {actionLabel && (
+                      {!isEmpRole && actionLabel && (
                         <span className="inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary/20 text-primary px-2 py-0.5 text-[11px] font-semibold w-fit transition-colors">
                           {actionLabel} →
                         </span>
@@ -501,11 +507,19 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                       )}
                     </div>
                   </div>
+                </div>
+              )
+
+              return linkUrl ? (
+                <Link key={n.id} href={linkUrl} className="block no-underline">
+                  {cardContent}
                 </Link>
+              ) : (
+                <div key={n.id}>{cardContent}</div>
               )
             })}
 
-            {exceptions.map((e) => {
+            {!isEmpRole && exceptions.map((e) => {
               const emp = state.employees.find((x) => x.id === e.employeeId)
               const exSite = sites.find((s) => s.id === e.siteId)
               const exSiteName = exSite?.name || "Location"
@@ -607,8 +621,8 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                   // Preserve currentSiteId so owner returns to the exact same location on next login
                   if (currentSiteId) {
                     try {
-                      localStorage.setItem("rotaflow_current_site_id", currentSiteId)
-                      document.cookie = `rotaflow_last_site=${encodeURIComponent(currentSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
+                      localStorage.setItem("rotabeat_current_site_id", currentSiteId)
+                      document.cookie = `rotabeat_last_site=${encodeURIComponent(currentSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
                     } catch { }
                   }
                   window.location.href = apiUrl("/login")

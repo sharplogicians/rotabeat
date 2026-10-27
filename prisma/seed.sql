@@ -1,4 +1,4 @@
--- Initial Seed Data for RotaFlow (app-desk.com/rota_v2)
+-- Initial Seed Data for RotaBeat (app-desk.com/rota_v2)
 -- Execute this in phpMyAdmin or MySQL CLI after running schema.sql
 
 -- 1. Create Business Owner Account (Aisha Khan)

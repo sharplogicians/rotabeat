@@ -25,7 +25,7 @@ async function main() {
   await prisma.location.deleteMany({})
   await prisma.user.deleteMany({})
 
-  console.log("Seeding RotaFlow database with 1 Business Owner and 2 clean locations...")
+  console.log("Seeding RotaBeat database with 1 Business Owner and 2 clean locations...")
 
   // 1. Create Single Business Owner Account
   const owner = await prisma.user.create({

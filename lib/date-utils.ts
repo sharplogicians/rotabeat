@@ -1,4 +1,4 @@
-// Date/time helpers for RotaFlow. All timestamps are treated as Europe/London (demo assumption).
+// Date/time helpers for RotaBeat. All timestamps are treated as Europe/London (demo assumption).
 
 export function isoDate(d: Date): string {
   const year = d.getFullYear()

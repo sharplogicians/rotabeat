@@ -109,7 +109,7 @@ if (!fs.existsSync(appLogPath)) fs.writeFileSync(appLogPath, `[${new Date().toIS
 console.log('  -> Initialized logs/ directory with error.log and app.log...');
 
 // 7. Generate a universal server.js and app.js tailored for Phusion Passenger & Node
-const passengerServerCode = `// Universal Phusion Passenger & Node.js HTTP Server for RotaFlow
+const passengerServerCode = `// Universal Phusion Passenger & Node.js HTTP Server for RotaBeat
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -172,11 +172,11 @@ const server = http.createServer(async (req, res) => {
 
 // Phusion Passenger detection & socket binding
 if (typeof PhusionPassenger !== 'undefined') {
-  console.log('Starting RotaFlow with Phusion Passenger...');
+  console.log('Starting RotaBeat with Phusion Passenger...');
   server.listen('passenger');
 } else {
   const port = process.env.PORT || 3000;
-  console.log('Starting RotaFlow server on port ' + port + '...');
+  console.log('Starting RotaBeat server on port ' + port + '...');
   server.listen(port);
 }
 `;
@@ -209,7 +209,7 @@ RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# 2. Forward everything else to port 3000 where RotaFlow is running
+# 2. Forward everything else to port 3000 where RotaBeat is running
 RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
 `;
 fs.writeFileSync(htaccessPath, htaccessContent, 'utf-8');

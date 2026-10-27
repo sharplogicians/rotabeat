@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
- import { apiUrl } from '@/lib/api';
+import { apiUrl } from '@/lib/api'
 import Link from "next/link"
 import { Delete, Check, Coffee, LogIn, LogOut, ArrowLeft, ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -111,10 +111,10 @@ export default function KioskPage() {
       <div className="flex items-center justify-between px-8 py-5">
         <div className="flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-full bg-primary-foreground/10 font-heading text-sm font-bold">
-            RF
+            RB
           </div>
           <div className="flex flex-col">
-            <span className="font-heading text-sm font-semibold leading-tight">RotaFlow Kiosk</span>
+            <span className="font-heading text-sm font-semibold leading-tight">RotaBeat Kiosk</span>
             <span className="text-xs text-primary-foreground/60 leading-tight">{site.name}</span>
           </div>
         </div>
@@ -215,15 +215,17 @@ export default function KioskPage() {
                     <LogOut data-icon="inline-start" />
                     Clock out
                   </Button>
-                  <Button
-                    size="lg"
-                    variant="secondary"
-                    className="h-14 w-full rounded-2xl bg-primary-foreground/10 text-base font-medium text-primary-foreground hover:bg-primary-foreground/15"
-                    onClick={() => handleClockAction("break_start", "Break started")}
-                  >
-                    <Coffee data-icon="inline-start" />
-                    Start break
-                  </Button>
+                  {!todaysAttendance?.events.some((e) => e.type === "break_start" || e.type === "break_end") && (
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      className="h-14 w-full rounded-2xl bg-primary-foreground/10 text-base font-medium text-primary-foreground hover:bg-primary-foreground/15"
+                      onClick={() => handleClockAction("break_start", "Break started")}
+                    >
+                      <Coffee data-icon="inline-start" />
+                      Start break
+                    </Button>
+                  )}
                 </>
               )}
               {kioskStatus === "on_break" && (

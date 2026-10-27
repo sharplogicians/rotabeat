@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import Link from "next/link"
-import { ClipboardCheck, Pencil, Clock, History, Plus, Eye, Filter } from "lucide-react"
+import { ClipboardCheck, Pencil, Clock, History, Plus, Eye, Filter, Camera } from "lucide-react"
 
 interface Row {
   key: string
@@ -341,6 +341,9 @@ export default function AttendancePage() {
                     const clockIn = totals?.clockInAt ? formatTimestamp12(totals.clockInAt) : "—"
                     const clockOut = totals?.clockOutAt ? formatTimestamp12(totals.clockOutAt) : "—"
 
+                    const clockInEv = events.find((e) => e.type === "clock_in")
+                    const clockOutEv = events.slice().reverse().find((e) => e.type === "clock_out")
+
                     const breakStartEv = events.find((e) => e.type === "break_start")
                     const breakEndEv = events.find((e) => e.type === "break_end")
                     const breakPeriod = breakStartEv
@@ -375,7 +378,19 @@ export default function AttendancePage() {
                           {shiftStart}
                         </TableCell>
                         <TableCell className="text-muted-foreground font-medium">
-                          {clockIn}
+                          <div className="flex items-center gap-1.5">
+                            <span>{clockIn}</span>
+                            {clockInEv?.photo && (
+                              <button
+                                type="button"
+                                onClick={() => setDetailsRow(row)}
+                                className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-0.5 rounded transition-colors"
+                                title="Live photo recorded at Clock In. Click Details to view."
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs font-mono whitespace-nowrap">
                           {breakPeriod}
@@ -390,7 +405,19 @@ export default function AttendancePage() {
                           {shiftEnd}
                         </TableCell>
                         <TableCell className="text-muted-foreground font-medium">
-                          {clockOut}
+                          <div className="flex items-center gap-1.5">
+                            <span>{clockOut}</span>
+                            {clockOutEv?.photo && (
+                              <button
+                                type="button"
+                                onClick={() => setDetailsRow(row)}
+                                className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-0.5 rounded transition-colors"
+                                title="Live photo recorded at Clock Out. Click Details to view."
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground font-semibold whitespace-nowrap">
                           {hours} hrs

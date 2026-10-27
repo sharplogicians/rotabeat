@@ -30,7 +30,7 @@ export default function LoginPage() {
   React.useEffect(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("rotaflow_remembered_login")
+        const saved = localStorage.getItem("rotabeat_remembered_login") || localStorage.getItem("rotaflow_remembered_login")
         if (saved) {
           const creds = JSON.parse(saved)
           if (creds && typeof creds === "object") {
@@ -53,7 +53,7 @@ export default function LoginPage() {
     // Try loading remembered credentials for this tab mode
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("rotaflow_remembered_login")
+        const saved = localStorage.getItem("rotabeat_remembered_login") || localStorage.getItem("rotaflow_remembered_login")
         if (saved) {
           const creds = JSON.parse(saved)
           if (creds && creds.loginType === mode) {
@@ -121,7 +121,7 @@ export default function LoginPage() {
           if (rememberMe) {
             try {
               localStorage.setItem(
-                "rotaflow_remembered_login",
+                "rotabeat_remembered_login",
                 JSON.stringify({
                   loginType,
                   identifier: identifier.trim(),
@@ -132,6 +132,7 @@ export default function LoginPage() {
             } catch { }
           } else {
             try {
+              localStorage.removeItem("rotabeat_remembered_login")
               localStorage.removeItem("rotaflow_remembered_login")
             } catch { }
           }
@@ -212,13 +213,13 @@ export default function LoginPage() {
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Clock className="size-5" />
           </div>
-          <span className="font-heading text-lg font-bold tracking-tight text-foreground">RotaFlow</span>
+          <span className="font-heading text-lg font-bold tracking-tight text-foreground">RotaBeat</span>
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-col gap-6 py-12">
           <div className="flex flex-col gap-2">
             <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
-            <p className="text-sm text-muted-foreground">Sign in to access your RotaFlow account.</p>
+            <p className="text-sm text-muted-foreground">Sign in to access your RotaBeat account.</p>
           </div>
 
           <Tabs value={loginType} onValueChange={handleTabChange} className="w-full">
@@ -288,10 +289,10 @@ export default function LoginPage() {
                       id="pin"
                       type={showPin ? "text" : "password"}
                       autoComplete="current-password"
-                      maxLength={6}
+                      maxLength={4}
                       placeholder="Enter your 4-digit PIN"
                       value={pin}
-                      onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                       className="pr-10 font-mono tracking-widest"
                       required
                     />
@@ -327,7 +328,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          RotaFlow Attendance &amp; Workforce Management System.
+          RotaBeat Attendance &amp; Workforce Management System.
         </p>
       </div>
 

@@ -35,7 +35,9 @@ import {
   DollarSign,
   CalendarRange,
   Lock,
+  Camera,
 } from "lucide-react"
+import { LiveClockCameraModal } from "@/components/attendance/live-camera-modal"
 import {
   deriveCurrentAttendanceStatus,
   getAttendanceStateLabel,
@@ -58,6 +60,8 @@ interface EmployeeAttendanceCardProps {
     siteName?: string
     hourlyRate?: number
     payType?: string
+    profileImage?: string | null
+    faceEmbedding?: string | null
   }
   todayShift?: {
     id?: string
@@ -76,6 +80,7 @@ interface EmployeeAttendanceCardProps {
     role?: string
   } | null
   initialEvents?: ClockEventLike[]
+  initialStatus?: string
   onActionComplete?: (result: any) => void
 }
 
@@ -84,12 +89,20 @@ export function EmployeeAttendanceCard({
   todayShift,
   upcomingShift,
   initialEvents = [],
+  initialStatus,
   onActionComplete,
 }: EmployeeAttendanceCardProps) {
   const { state, dispatch } = useAppStore()
   const [events, setEvents] = React.useState<ClockEventLike[]>(initialEvents)
   const [loading, setLoading] = React.useState<boolean>(false)
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
+  const [markedAbsent, setMarkedAbsent] = React.useState<boolean>(initialStatus === "absent")
+
+  React.useEffect(() => {
+    if (initialStatus === "absent") {
+      setMarkedAbsent(true)
+    }
+  }, [initialStatus])
 
   // Confirmation state
   const [confirmationData, setConfirmationData] = React.useState<{
@@ -99,7 +112,15 @@ export function EmployeeAttendanceCard({
     formattedTime: string
     date: string
     statusLabel: string
+    photo?: string | null
+    faceMatchScore?: number | null
+    faceVerified?: boolean
   } | null>(null)
+
+  // Live Camera Capture state
+  const [cameraModalOpen, setCameraModalOpen] = React.useState(false)
+  const [pendingAction, setPendingAction] = React.useState<AttendanceActionType | null>(null)
+  const [selectedPhotoPreview, setSelectedPhotoPreview] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     setEvents(initialEvents)
@@ -108,6 +129,25 @@ export function EmployeeAttendanceCard({
   const currentStatus: EmployeeAttendanceState = React.useMemo(() => {
     return deriveCurrentAttendanceStatus(events)
   }, [events])
+
+  const isAbsent = React.useMemo(() => {
+    if (events.length > 0) return false
+    if (markedAbsent) return true
+    if (initialStatus === "absent") return true
+    if (errorMsg && errorMsg.toLowerCase().includes("marked absent")) return true
+    if (todayShift?.startTime) {
+      const [h, m] = todayShift.startTime.split(":").map(Number)
+      if (!isNaN(h) && !isNaN(m)) {
+        const now = new Date()
+        const nowMins = now.getHours() * 60 + now.getMinutes()
+        const shiftMins = h * 60 + m
+        if (nowMins > shiftMins + 5) {
+          return true
+        }
+      }
+    }
+    return false
+  }, [events.length, markedAbsent, initialStatus, errorMsg, todayShift?.startTime])
 
   const workedTotals = React.useMemo(() => {
     return computeWorkedTotals(
@@ -129,13 +169,43 @@ export function EmployeeAttendanceCard({
     return weekDays(state.currentWeekStart)
   }, [state.currentWeekStart])
 
-  async function handleAttendanceAction(action: AttendanceActionType) {
-    const val = validateAttendanceAction(currentStatus, action)
+  function handleAttendanceAction(action: AttendanceActionType) {
+    if (action === "clock_in" && isAbsent) {
+      const errorText = `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${todayShift?.startTime || ""}). Please contact your site manager.`
+      setErrorMsg(errorText)
+      toast.error(errorText)
+      return
+    }
+
+    const val = validateAttendanceAction(currentStatus, action, events)
     if (!val.valid) {
       setErrorMsg(val.error || "Action not allowed.")
       return
     }
 
+    // Require live photo for clock_in and clock_out
+    if (action === "clock_in" || action === "clock_out") {
+      if (!employee.profileImage && !employee.faceEmbedding) {
+        const errorText = "No registered photo found. Please have your manager upload a profile photo before clocking in."
+        setErrorMsg(errorText)
+        toast.error(errorText)
+        return
+      }
+      setPendingAction(action)
+      setCameraModalOpen(true)
+      return
+    }
+
+    // Breaks can proceed directly
+    executeAttendanceAction(action, null)
+  }
+
+  async function executeAttendanceAction(
+    action: AttendanceActionType,
+    photo: string | null,
+    matchScore?: number | null,
+    faceVerified?: boolean
+  ) {
     setLoading(true)
     setErrorMsg(null)
 
@@ -147,13 +217,23 @@ export function EmployeeAttendanceCard({
           employeeId: employee.id,
           action,
           siteId: employee.siteId,
+          photo: photo || null,
+          faceMatchScore: typeof matchScore === "number" ? matchScore : null,
+          faceVerified: Boolean(faceVerified),
+          source: "web",
         }),
       })
 
       const json = await res.json()
 
       if (!res.ok || !json.success) {
-        setErrorMsg(json.message || "Failed to submit attendance action.")
+        const errMsg = json.message || "Failed to submit attendance action."
+        setErrorMsg(errMsg)
+        if (json.isAbsent || (errMsg && errMsg.toLowerCase().includes("marked absent"))) {
+          setMarkedAbsent(true)
+        }
+        setCameraModalOpen(false)
+        setPendingAction(null)
         setLoading(false)
         return
       }
@@ -163,6 +243,7 @@ export function EmployeeAttendanceCard({
       const newEvent: ClockEventLike = {
         type: data.action,
         timestamp: data.timestamp,
+        photo: data.photo || photo || null,
       }
 
       setEvents((prev) => [...prev, newEvent])
@@ -172,6 +253,7 @@ export function EmployeeAttendanceCard({
         employeeId: employee.id,
         siteId: employee.siteId || "site-bright",
         eventType: action === "clock_in" ? "clock_in" : action === "break_start" ? "break_start" : action === "break_end" ? "break_end" : "clock_out",
+        photo: data.photo || photo || null,
       })
 
       if (Array.isArray(json.notifications)) {
@@ -192,7 +274,13 @@ export function EmployeeAttendanceCard({
         formattedTime: data.formattedTime,
         date: data.date,
         statusLabel: data.statusLabel,
+        photo: data.photo || photo || null,
+        faceMatchScore: typeof matchScore === "number" ? matchScore : null,
+        faceVerified: Boolean(faceVerified),
       })
+
+      setCameraModalOpen(false)
+      setPendingAction(null)
 
       if (onActionComplete) {
         onActionComplete(data)
@@ -205,6 +293,15 @@ export function EmployeeAttendanceCard({
   }
 
   const renderStatusBadge = () => {
+    if (isAbsent && events.length === 0) {
+      return (
+        <Badge variant="destructive" className="px-3 py-1 text-xs font-semibold bg-red-600 hover:bg-red-600 text-white dark:bg-red-700 shadow-sm">
+          <AlertCircle className="w-3.5 h-3.5 mr-1 text-white" />
+          Marked Absent
+        </Badge>
+      )
+    }
+
     switch (currentStatus) {
       case "not_clocked_in":
         return (
@@ -244,8 +341,16 @@ export function EmployeeAttendanceCard({
     <>
       <Card className="w-full max-w-xl mx-auto shadow-lg border-muted/80 backdrop-blur-sm bg-card/95">
         <CardHeader className="text-center pb-3">
-          <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-2 ring-4 ring-primary/5">
-            <UserCheck className="w-8 h-8 text-primary" />
+          <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-2 ring-4 ring-primary/5 overflow-hidden shadow-sm">
+            {employee.profileImage ? (
+              <img
+                src={employee.profileImage}
+                alt={employee.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <UserCheck className="w-8 h-8 text-primary" />
+            )}
           </div>
           <CardTitle className="text-2xl font-bold font-heading tracking-tight">{employee.name}</CardTitle>
           <CardDescription className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-0.5">
@@ -367,34 +472,32 @@ export function EmployeeAttendanceCard({
           {/* Action Availability (Open strictly for Today's Date) */}
           <div className="flex flex-col gap-3 py-1">
             {currentStatus === "not_clocked_in" && (
-              <Button
-                size="lg"
-                className="w-full h-14 text-base font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all duration-200"
-                disabled={loading}
-                onClick={() => handleAttendanceAction("clock_in")}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="mr-2 h-5 w-5" />
-                    Clock In for Today
-                  </>
-                )}
-              </Button>
-            )}
-
-            {currentStatus === "working" && (
-              <div className="grid grid-cols-2 gap-3">
+              isAbsent ? (
+                <div className="space-y-3">
+                  <Button
+                    size="lg"
+                    disabled={true}
+                    className="w-full h-14 text-base font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed shadow-none border border-border flex items-center justify-center gap-2"
+                  >
+                    <Lock className="h-5 w-5 text-red-500" />
+                    Clock In Blocked — Marked Absent
+                  </Button>
+                  <div className="rounded-lg border border-red-500/20 bg-red-50/70 dark:bg-red-950/30 p-3.5 text-center text-xs text-red-800 dark:text-red-300 space-y-1">
+                    <p className="font-semibold flex items-center justify-center gap-1.5 text-red-700 dark:text-red-400">
+                      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+                      Shift Locked: Automatically Marked Absent
+                    </p>
+                    <p className="text-muted-foreground">
+                      You are more than 5 minutes late for your scheduled shift ({todayShift?.startTime || "scheduled time"}). Clock In is blocked. Please contact your site manager to update your attendance.
+                    </p>
+                  </div>
+                </div>
+              ) : (
                 <Button
                   size="lg"
-                  variant="outline"
-                  className="h-14 text-base font-semibold border-amber-300 dark:border-amber-700 bg-amber-50 hover:bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/60 shadow-sm transition-all"
+                  className="w-full h-14 text-base font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all duration-200"
                   disabled={loading}
-                  onClick={() => handleAttendanceAction("break_start")}
+                  onClick={() => handleAttendanceAction("clock_in")}
                 >
                   {loading ? (
                     <>
@@ -403,33 +506,91 @@ export function EmployeeAttendanceCard({
                     </>
                   ) : (
                     <>
-                      <Coffee className="mr-2 h-5 w-5 text-amber-600 dark:text-amber-400" />
-                      Start Break
+                      <LogIn className="mr-2 h-5 w-5" />
+                      Clock In for Today
                     </>
                   )}
                 </Button>
-
-                <Button
-                  size="lg"
-                  variant="destructive"
-                  className="h-14 text-base font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-all"
-                  disabled={loading}
-                  onClick={() => handleAttendanceAction("clock_out")}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <LogOut className="mr-2 h-5 w-5" />
-                      Clock Out
-                    </>
-                  )}
-                </Button>
-              </div>
+              )
             )}
+
+            {currentStatus === "working" && (() => {
+              const hasTakenBreak = events.some((e) => e.type === "break_start" || e.type === "break_end")
+
+              if (hasTakenBreak) {
+                return (
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      size="lg"
+                      variant="destructive"
+                      className="w-full h-14 text-base font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-all"
+                      disabled={loading}
+                      onClick={() => handleAttendanceAction("clock_out")}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <LogOut className="mr-2 h-5 w-5" />
+                          Clock Out
+                        </>
+                      )}
+                    </Button>
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground bg-muted/30 py-1.5 px-3 rounded-lg border border-border/50">
+                      <Coffee className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Break completed (1 of 1 allowed break taken)</span>
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="h-14 text-base font-semibold border-amber-300 dark:border-amber-700 bg-amber-50 hover:bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/60 shadow-sm transition-all"
+                    disabled={loading}
+                    onClick={() => handleAttendanceAction("break_start")}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Coffee className="mr-2 h-5 w-5 text-amber-600 dark:text-amber-400" />
+                        Start Break
+                      </>
+                    )}
+                  </Button>
+
+                  <Button
+                    size="lg"
+                    variant="destructive"
+                    className="h-14 text-base font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-all"
+                    disabled={loading}
+                    onClick={() => handleAttendanceAction("clock_out")}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <LogOut className="mr-2 h-5 w-5" />
+                        Clock Out
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )
+            })()}
 
             {currentStatus === "on_break" && (
               <div className="space-y-3">
@@ -493,8 +654,21 @@ export function EmployeeAttendanceCard({
                         : "Clock Out"
 
                 return (
-                  <div key={idx} className="flex justify-between items-center text-muted-foreground">
-                    <span className="font-medium text-foreground">{label}</span>
+                  <div key={idx} className="flex justify-between items-center text-muted-foreground bg-background/50 p-1.5 rounded-lg border border-border/40">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-foreground">{label}</span>
+                      {evt.photo && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPhotoPreview(evt.photo || null)}
+                          className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 px-1.5 py-0.5 rounded-md transition-colors"
+                          title="Click to view live capture photo"
+                        >
+                          <Camera className="w-3 h-3" />
+                          Photo
+                        </button>
+                      )}
+                    </div>
                     <span className="font-mono text-xs">{timeStr}</span>
                   </div>
                 )
@@ -518,7 +692,31 @@ export function EmployeeAttendanceCard({
           </DialogHeader>
 
           {confirmationData && (
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2.5 text-sm my-2">
+            <div className="bg-muted/50 rounded-xl p-4 space-y-2.5 text-sm my-2">
+              {confirmationData.photo && (
+                <div className="flex flex-col items-center gap-1.5 pb-2 border-b border-border">
+                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-emerald-500/40 shadow-sm">
+                    <img
+                      src={confirmationData.photo}
+                      alt="Captured verification"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-1 right-1 bg-emerald-600 text-white rounded-full p-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                      <Camera className="w-3 h-3" /> Live Image Verified
+                    </span>
+                    {typeof confirmationData.faceMatchScore === "number" && (
+                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                        {confirmationData.faceMatchScore}% Match
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Employee:</span>
                 <span className="font-semibold text-foreground">{confirmationData.employeeName}</span>
@@ -539,8 +737,55 @@ export function EmployeeAttendanceCard({
           )}
 
           <div className="flex justify-center pt-2">
-            <Button className="w-full sm:w-auto px-8" onClick={() => setConfirmationData(null)}>
+            <Button className="w-full sm:w-auto px-8 rounded-xl" onClick={() => setConfirmationData(null)}>
               Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Live Camera Capture Modal with FaceNet biometric auto-verification */}
+      {pendingAction && (
+        <LiveClockCameraModal
+          open={cameraModalOpen}
+          onOpenChange={(open) => {
+            setCameraModalOpen(open)
+            if (!open) setPendingAction(null)
+          }}
+          actionType={pendingAction}
+          employeeName={employee.name}
+          registeredProfileImage={employee.profileImage}
+          registeredFaceEmbedding={employee.faceEmbedding}
+          onCaptureAndConfirm={(photo, matchScore, faceVerified) => {
+            if (pendingAction) {
+              return executeAttendanceAction(pendingAction, photo, matchScore, faceVerified)
+            }
+          }}
+          isSubmitting={loading}
+        />
+      )}
+
+      {/* Photo Lightbox Dialog */}
+      <Dialog open={Boolean(selectedPhotoPreview)} onOpenChange={(open) => !open && setSelectedPhotoPreview(null)}>
+        <DialogContent className="sm:max-w-md p-4">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold flex items-center gap-2">
+              <Camera className="w-4 h-4 text-emerald-600" />
+              Live Attendance Image
+            </DialogTitle>
+          </DialogHeader>
+          {selectedPhotoPreview && (
+            <div className="overflow-hidden rounded-xl bg-zinc-950 aspect-[4/3] mt-2 border">
+              <img
+                src={selectedPhotoPreview}
+                alt="Enlarged verification photo"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button size="sm" variant="outline" onClick={() => setSelectedPhotoPreview(null)}>
+              Close
             </Button>
           </div>
         </DialogContent>

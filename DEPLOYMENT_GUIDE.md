@@ -1,6 +1,6 @@
-# RotaFlow cPanel & VPS Production Deployment Guide
+# RotaBeat cPanel & VPS Production Deployment Guide
 
-This guide documents the exact, tested deployment architecture and step-by-step procedures for running **RotaFlow** on GoDaddy cPanel VPS at:
+This guide documents the exact, tested deployment architecture and step-by-step procedures for running **RotaBeat** on GoDaddy cPanel VPS at:
 - **Domain:** `http://working-emerald-mockingbird.72-167-148-243.cpanel.site/`
 - **Server Root Path:** `/home/rotaflow/public_html`
 - **Node.js Engine:** EasyApache Node 22 (`/opt/cpanel/ea-nodejs22/bin/node`)
@@ -20,7 +20,7 @@ Apache Web Server (/home/rotaflow/public_html)
        └─► 2. All Dynamic Pages & API Routes   ──► Reverse Proxied to http://127.0.0.1:3000
                                                           │
                                                           ▼
-                                              RotaFlow Node.js Server
+                                              RotaBeat Node.js Server
                                               (server.js running via PM2)
                                                           │
                                                           ▼
@@ -43,7 +43,7 @@ RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# 2. Forward everything else to port 3000 where RotaFlow is running
+# 2. Forward everything else to port 3000 where RotaBeat is running
 RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
 ```
 
@@ -145,7 +145,7 @@ From `/home/rotaflow/public_html`, run:
 ```
 You should see:
 ```text
-Starting RotaFlow server on port 3000...
+Starting RotaBeat server on port 3000...
 ```
 *(Note: Keep the terminal window open while testing, or press `Ctrl + C` when you want to stop it).*
 
@@ -160,7 +160,7 @@ In cPanel -> **Software** -> **Setup Node.js App**:
 
 #### Method C: Run in Background 24/7 with Local PM2 (Recommended for Production)
 
-To keep RotaFlow running automatically even after you close the cPanel terminal or log out:
+To keep RotaBeat running automatically even after you close the cPanel terminal or log out:
 
 ```bash
 cd /home/rotaflow/public_html
@@ -168,8 +168,8 @@ cd /home/rotaflow/public_html
 # 1. Install PM2 locally (since global install is blocked in jailshell)
 /opt/cpanel/ea-nodejs22/bin/npm install pm2
 
-# 2. Start RotaFlow under PM2 process manager
-./node_modules/.bin/pm2 start server.js --name rotaflow --interpreter /opt/cpanel/ea-nodejs22/bin/node
+# 2. Start RotaBeat under PM2 process manager
+./node_modules/.bin/pm2 start server.js --name rotabeat --interpreter /opt/cpanel/ea-nodejs22/bin/node
 
 # 3. Save process list so it persists
 ./node_modules/.bin/pm2 save

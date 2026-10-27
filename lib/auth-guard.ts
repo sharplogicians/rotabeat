@@ -104,7 +104,9 @@ export function getApiUser(request: Request): AuthUser | null {
   // 2. Direct Cookie Fallback (Guarantees authentication works even if proxy headers are bypassed)
   try {
     const cookieHeader = request.headers.get("cookie") || ""
-    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]+)`))
+    const match =
+      cookieHeader.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]+)`)) ||
+      cookieHeader.match(/(?:^|;\s*)rotaflow_session=([^;]+)/)
     if (match && match[1]) {
       const session = verifySessionToken(match[1])
       if (session) {
