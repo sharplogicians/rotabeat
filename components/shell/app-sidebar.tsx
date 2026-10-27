@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/sidebar"
 import { useAppStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { RotaBeatLogo, RotaBeatIcon } from "@/components/brand/rotabeat-logo"
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -59,17 +60,28 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="gap-0 border-b border-sidebar-border">
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <Clock className="size-4.5" />
+      <SidebarHeader className="gap-0 border-b border-sidebar-border px-3 py-3">
+        <div className="flex items-center gap-2 min-h-8">
+          <Link
+            href={isEmployee ? "/attendance/clock" : "/dashboard"}
+            className="flex items-center gap-2 group-data-[collapsible=icon]:hidden hover:opacity-90 transition-opacity"
+          >
+            <RotaBeatLogo size="sm" priority />
+          </Link>
+          <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full">
+            <Link
+              href={isEmployee ? "/attendance/clock" : "/dashboard"}
+              className="flex items-center justify-center hover:opacity-90 transition-opacity"
+              title="RotaBeat"
+            >
+              <RotaBeatIcon size={24} />
+            </Link>
           </div>
-          <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="font-heading text-sm font-bold tracking-tight">RotaBeat</span>
-            <span className="text-[11px] text-sidebar-foreground/60">
-              {isEmployee ? "Employee Portal" : "Northern Table Group"}
-            </span>
-          </div>
+        </div>
+        <div className="flex flex-col pt-1 px-0.5 group-data-[collapsible=icon]:hidden">
+          <span className="text-[11px] font-medium text-muted-foreground truncate">
+            {isEmployee ? "Employee Portal" : "Northern Table Group"}
+          </span>
         </div>
       </SidebarHeader>
 

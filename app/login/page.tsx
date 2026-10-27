@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
+import { RotaBeatLogo, RotaBeatIcon } from "@/components/brand/rotabeat-logo"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -210,10 +211,7 @@ export default function LoginPage() {
     <div className="grid min-h-svh lg:grid-cols-2">
       <div className="flex flex-col justify-between p-8 md:p-12">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Clock className="size-5" />
-          </div>
-          <span className="font-heading text-lg font-bold tracking-tight text-foreground">RotaBeat</span>
+          <RotaBeatLogo size="md" priority />
         </div>
 
         <div className="mx-auto flex w-full max-w-sm flex-col gap-6 py-12">
@@ -332,38 +330,52 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-primary p-12 text-primary-foreground lg:flex">
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-[#4F46E5] via-[#4338CA] to-[#312E81] p-12 text-white lg:flex shadow-2xl">
         <div
-          className="absolute inset-0 opacity-[0.06]"
+          className="absolute inset-0 opacity-[0.08]"
           style={{
             backgroundImage:
-              "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
+              "linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)",
+            backgroundSize: "36px 36px",
           }}
         />
-        <div className="relative z-10 flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wider text-accent">Northern Table Group</span>
-          <h2 className="font-heading text-3xl font-bold tracking-tight text-balance">
-            One weekly workflow, from rota to payroll.
-          </h2>
+        <div className="absolute -right-16 -top-16 opacity-15 pointer-events-none">
+          <RotaBeatIcon size={340} />
         </div>
 
-        <div className="relative z-10 flex flex-col gap-4">
+        <div className="relative z-10 flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-100 backdrop-blur-sm">
+              Workforce Simplified
+            </span>
+          </div>
+          <h2 className="font-heading text-3xl font-extrabold tracking-tight text-white leading-tight">
+            One weekly workflow, from rota to payroll.
+          </h2>
+          <p className="text-sm text-indigo-100/80 max-w-md">
+            Smart scheduling, automated GPS &amp; PIN attendance, exception handling, and one-click payroll exports.
+          </p>
+        </div>
+
+        <div className="relative z-10 flex flex-col gap-3.5 my-auto">
           {[
-            { icon: CalendarRange, text: "Build the weekly rota once, and publish it to every site." },
-            { icon: Tablet, text: "Staff clock in and out using custom PIN — simple and secure." },
-            { icon: ClipboardCheck, text: "Review exceptions, approve hours, export for payroll." },
+            { icon: CalendarRange, text: "Build the weekly rota once, and publish instantly to staff." },
+            { icon: Tablet, text: "Staff clock in & out with fast PIN entry or tablet kiosk." },
+            { icon: ClipboardCheck, text: "Review exceptions, approve hours, and export clean payroll." },
           ].map((item) => (
-            <div key={item.text} className="flex items-start gap-3 rounded-xl bg-white/5 p-4">
-              <item.icon className="mt-0.5 size-5 shrink-0 text-accent" />
-              <p className="text-sm leading-relaxed text-primary-foreground/90">{item.text}</p>
+            <div key={item.text} className="flex items-start gap-3.5 rounded-xl bg-white/10 p-4 border border-white/10 backdrop-blur-md">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white">
+                <item.icon className="size-4" />
+              </div>
+              <p className="text-sm font-medium leading-relaxed text-white/95">{item.text}</p>
             </div>
           ))}
         </div>
 
-        <p className="relative z-10 text-xs text-primary-foreground/60">
-          Bright Café · Riverside Kitchen · Central Bakery
-        </p>
+        <div className="relative z-10 flex items-center justify-between text-xs text-indigo-200/80 border-t border-white/10 pt-4">
+          <span>RotaBeat Platform</span>
+          <span>Fast · Accurate · Compliant</span>
+        </div>
       </div>
     </div>
   )

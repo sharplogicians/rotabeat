@@ -35,6 +35,7 @@ import { formatWeekRange, addDays, CURRENT_WEEK_START } from "@/lib/date-utils"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
+import { RotaBeatLogo, RotaBeatIcon } from "@/components/brand/rotabeat-logo"
 
 const ROLE_LABELS: Record<Role, string> = {
   business_owner: "Business Owner",
@@ -183,7 +184,12 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 sm:gap-3 border-b border-border bg-card px-3 sm:px-4">
-      <SidebarTrigger />
+      <div className="flex items-center gap-2">
+        <SidebarTrigger />
+        <Link href={isEmpRole ? "/attendance/clock" : "/dashboard"} className="flex md:hidden items-center shrink-0">
+          <RotaBeatIcon size={22} />
+        </Link>
+      </div>
       <Separator orientation="vertical" className="h-6 hidden sm:block" />
       <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs sm:text-sm">{breadcrumb}</div>
 

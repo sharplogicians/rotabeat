@@ -20,20 +20,27 @@ const body = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'RotaBeat — Workforce management, simplified.',
+  title: {
+    default: 'RotaBeat — Workforce management, simplified.',
+    template: '%s | RotaBeat',
+  },
   description:
     'RotaBeat helps UK businesses build rotas, track attendance and approve payable hours without the paperwork.',
-  generator: 'v0.app',
   icons: {
     icon: [
+      { url: '/icon-32x32.png', sizes: '32x32', type: 'image/png' },
       { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/icon-32x32.png',
+    apple: [
+      { url: '/apple-icon.png', sizes: '180x180', type: 'image/png' },
     ],
   },
 }
 
 export const viewport: Viewport = {
   colorScheme: 'light',
-  themeColor: '#101c36',
+  themeColor: '#4f46e5',
   userScalable: true,
 }
 

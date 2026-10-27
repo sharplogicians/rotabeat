@@ -12,6 +12,7 @@ import { useAppStore } from "@/lib/store"
 import type { ClockEvent, ClockEventType, Employee } from "@/lib/types"
 import { DEMO_NOW, TODAY_ISO, formatClock, formatDateLong, formatTime12 } from "@/lib/date-utils"
 import { cn } from "@/lib/utils"
+import { RotaBeatIcon } from "@/components/brand/rotabeat-logo"
 
 type KioskStatus = "not_started" | "clocked_in" | "on_break" | "clocked_out"
 
@@ -110,8 +111,8 @@ export default function KioskPage() {
       {/* Top bar */}
       <div className="flex items-center justify-between px-8 py-5">
         <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-full bg-primary-foreground/10 font-heading text-sm font-bold">
-            RB
+          <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 p-1.5 backdrop-blur-sm border border-white/10">
+            <RotaBeatIcon size={28} />
           </div>
           <div className="flex flex-col">
             <span className="font-heading text-sm font-semibold leading-tight">RotaBeat Kiosk</span>
