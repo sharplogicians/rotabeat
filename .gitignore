@@ -62,6 +62,7 @@ lerna-debug.log*
 *.sln
 *.swp
 *.swo
+.agents/
 
 # ==========================================
 # Operating System Artifacts
