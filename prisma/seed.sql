@@ -15,6 +15,6 @@ VALUES
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
 
 -- 3. Create Default Organization Settings
-INSERT INTO `OrgSettings` (`id`, `orgName`, `timeZone`, `weekStart`, `defaultPayPeriod`, `earlyClockInMinutes`, `lateThresholdMinutes`, `rounding`, `breaksClocked`, `duplicateActionPrevention`, `overtimeEnabled`, `weeklyOvertimeThreshold`, `weeklyApprovalEmailReminder`)
-VALUES ('default', 'Northern Table Group', 'Europe/London', 'monday', 'weekly', 15, 5, 'exact', 1, 1, 1, 40, 1)
+INSERT INTO `OrgSettings` (`id`,  `timeZone`, `weekStart`, `defaultPayPeriod`, `earlyClockInMinutes`, `lateThresholdMinutes`, `rounding`, `breaksClocked`, `duplicateActionPrevention`, `overtimeEnabled`, `weeklyOvertimeThreshold`, `weeklyApprovalEmailReminder`)
+VALUES ('default',  'Europe/London', 'monday', 'weekly', 15, 5, 'exact', 1, 1, 1, 40, 1)
 ON DUPLICATE KEY UPDATE `orgName` = VALUES(`orgName`);

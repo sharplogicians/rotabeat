@@ -80,7 +80,7 @@ export function AppSidebar() {
         </div>
         <div className="flex flex-col pt-1 px-0.5 group-data-[collapsible=icon]:hidden">
           <span className="text-[11px] font-medium text-muted-foreground truncate">
-            {isEmployee ? "Employee Portal" : "Northern Table Group"}
+            {isEmployee ? "Employee Portal" : ""}
           </span>
         </div>
       </SidebarHeader>

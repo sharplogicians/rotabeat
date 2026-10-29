@@ -1,14 +1,36 @@
 "use client"
 
 import * as React from "react"
-import { apiUrl } from '@/lib/api';
+import { apiUrl } from '@/lib/api'
 import { useRouter } from "next/navigation"
-import { Clock, CalendarRange, ClipboardCheck, Tablet, UserCheck, ShieldCheck, Eye, EyeOff } from "lucide-react"
+import {
+  Clock,
+  CalendarRange,
+  ClipboardCheck,
+  Tablet,
+  UserCheck,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Mail,
+  ArrowLeft,
+  RefreshCw,
+  Lock,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
 import { RotaBeatLogo, RotaBeatIcon } from "@/components/brand/rotabeat-logo"
@@ -27,11 +49,35 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = React.useState(true)
   const [loading, setLoading] = React.useState(false)
 
+  // Forgot password modal states
+  const [forgotOpen, setForgotOpen] = React.useState(false)
+  const [forgotStep, setForgotStep] = React.useState<"email" | "code">("email")
+  const [forgotIdentifier, setForgotIdentifier] = React.useState("")
+  const [forgotCode, setForgotCode] = React.useState("")
+  const [newPassword, setNewPassword] = React.useState("")
+  const [confirmPassword, setConfirmPassword] = React.useState("")
+  const [showNewPassword, setShowNewPassword] = React.useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false)
+  const [forgotLoading, setForgotLoading] = React.useState(false)
+  const [maskedEmail, setMaskedEmail] = React.useState("")
+  const [resendCountdown, setResendCountdown] = React.useState(0)
+
+  // Resend code countdown timer
+  React.useEffect(() => {
+    if (resendCountdown <= 0) return
+    const timer = setInterval(() => {
+      setResendCountdown((prev) => prev - 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [resendCountdown])
+
   // Load remembered credentials on mount
   React.useEffect(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("rotabeat_remembered_login") || localStorage.getItem("rotaflow_remembered_login")
+        const saved =
+          localStorage.getItem("rotabeat_remembered_login") ||
+          localStorage.getItem("rotaflow_remembered_login")
         if (saved) {
           const creds = JSON.parse(saved)
           if (creds && typeof creds === "object") {
@@ -54,7 +100,9 @@ export default function LoginPage() {
     // Try loading remembered credentials for this tab mode
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("rotabeat_remembered_login") || localStorage.getItem("rotaflow_remembered_login")
+        const saved =
+          localStorage.getItem("rotabeat_remembered_login") ||
+          localStorage.getItem("rotaflow_remembered_login")
         if (saved) {
           const creds = JSON.parse(saved)
           if (creds && creds.loginType === mode) {
@@ -78,8 +126,6 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-
-    const secretInput = loginType === "employee" ? pin : password
 
     try {
       const res = await fetch(apiUrl("/api/auth/login"), {
@@ -139,7 +185,10 @@ export default function LoginPage() {
           }
         }
         const u = data.user
-        const initials = u.avatarInitials || `${u.firstName?.[0] || ""}${u.lastName?.[0] || ""}`.toUpperCase() || "US"
+        const initials =
+          u.avatarInitials ||
+          `${u.firstName?.[0] || ""}${u.lastName?.[0] || ""}`.toUpperCase() ||
+          "US"
 
         // Immediately fetch and dispatch fresh DB locations so the store has all real locations
         try {
@@ -191,7 +240,8 @@ export default function LoginPage() {
         toast.success(data.message || "Signed in successfully!")
 
         // Navigate with full window load so session cookies and DB state are freshly initialized
-        const targetUrl = data.user.role === "employee" ? apiUrl("/attendance/clock") : apiUrl("/dashboard")
+        const targetUrl =
+          data.user.role === "employee" ? apiUrl("/attendance/clock") : apiUrl("/dashboard")
         if (typeof window !== "undefined") {
           window.location.href = targetUrl
         } else {
@@ -200,10 +250,101 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       console.error("Login request exception:", err)
-      const exactMsg = err?.message ? `Connection failed: ${err.message}` : "Failed to connect to authentication server."
+      const exactMsg = err?.message
+        ? `Connection failed: ${err.message}`
+        : "Failed to connect to authentication server."
       toast.error(exactMsg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Request 6-digit verification code
+  async function handleSendVerificationCode(e?: React.FormEvent) {
+    if (e) e.preventDefault()
+    if (!forgotIdentifier.trim()) {
+      toast.error("Please enter your registered email address or username.")
+      return
+    }
+
+    setForgotLoading(true)
+    try {
+      const res = await fetch(apiUrl("/api/auth/reset-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: forgotIdentifier.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        toast.error(data.message || "Failed to send verification code.")
+        return
+      }
+
+      setMaskedEmail(data.maskedEmail || "")
+      setForgotStep("code")
+      setResendCountdown(60)
+      toast.success(data.message || "Verification code sent to your registered email!")
+      if (data.devCode) {
+        toast.info(`[Dev Code] Verification code: ${data.devCode}`, { duration: 10000 })
+      }
+    } catch (err: any) {
+      toast.error("Could not reach the server. Please try again.")
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
+  // Submit 6-digit code and set new password in the database
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault()
+
+    const cleanCode = forgotCode.replace(/\D/g, "").slice(0, 6)
+    if (cleanCode.length !== 6) {
+      toast.error("Please enter the complete 6-digit verification code.")
+      return
+    }
+
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters long.")
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match. Please re-enter.")
+      return
+    }
+
+    setForgotLoading(true)
+    try {
+      const res = await fetch(apiUrl("/api/auth/reset-password"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identifier: forgotIdentifier.trim(),
+          code: cleanCode,
+          newPassword: newPassword.trim(),
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        toast.error(data.message || "Failed to reset password.")
+        return
+      }
+
+      toast.success(data.message || "Password reset successfully! You can now log in.")
+      // Automatically prefill the new credentials on the login screen
+      setIdentifier(forgotIdentifier.trim())
+      setPassword(newPassword.trim())
+      setForgotOpen(false)
+      setForgotStep("email")
+      setForgotCode("")
+      setNewPassword("")
+      setConfirmPassword("")
+    } catch (err: any) {
+      toast.error("Could not reach the server. Please try again.")
+    } finally {
+      setForgotLoading(false)
     }
   }
 
@@ -254,6 +395,20 @@ export default function LoginPage() {
                 <Field>
                   <div className="flex items-center justify-between">
                     <FieldLabel htmlFor="password">Password</FieldLabel>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotIdentifier(identifier)
+                        setForgotStep("email")
+                        setForgotCode("")
+                        setNewPassword("")
+                        setConfirmPassword("")
+                        setForgotOpen(true)
+                      }}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 hover:underline transition-colors focus:outline-none"
+                    >
+                      Forgot password?
+                    </button>
                   </div>
                   <div className="relative">
                     <Input
@@ -377,6 +532,184 @@ export default function LoginPage() {
           <span>Fast · Accurate · Compliant</span>
         </div>
       </div>
+
+      {/* Forgot Password Dialog */}
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="sm:max-w-md p-6">
+          {forgotStep === "email" ? (
+            <form onSubmit={handleSendVerificationCode} className="space-y-4">
+              <div className="flex flex-col gap-2">
+                <div className="size-11 rounded-full bg-indigo-50 dark:bg-indigo-950/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <KeyRound className="size-5" />
+                </div>
+                <DialogTitle className="text-xl font-bold tracking-tight">Forgot password?</DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                  Enter your Owner or Manager registered email or username. We will send a 6-digit verification code to reset your password.
+                </DialogDescription>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <FieldLabel htmlFor="forgot-identifier" className="text-sm font-medium">
+                  Registered Email or Username
+                </FieldLabel>
+                <Input
+                  id="forgot-identifier"
+                  type="text"
+                  placeholder="e.g. aisha.khan@northerntable.co.uk"
+                  value={forgotIdentifier}
+                  onChange={(e) => setForgotIdentifier(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <Button
+                  type="submit"
+                  disabled={forgotLoading || !forgotIdentifier.trim()}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {forgotLoading ? "Sending Code…" : "Send Verification Code"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setForgotOpen(false)}
+                  className="w-full text-muted-foreground"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="flex flex-col gap-2">
+                <div className="size-11 rounded-full bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Mail className="size-5" />
+                </div>
+                <DialogTitle className="text-xl font-bold tracking-tight">Enter Verification Code</DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                  A 6-digit code has been sent to{" "}
+                  <span className="font-semibold text-foreground">{maskedEmail || forgotIdentifier}</span>.
+                  Enter it below to reset your password.
+                </DialogDescription>
+              </div>
+
+              {/* 6-Digit OTP */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <FieldLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    6-Digit Verification Code
+                  </FieldLabel>
+                  {resendCountdown > 0 ? (
+                    <span className="text-xs text-muted-foreground">Resend in {resendCountdown}s</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSendVerificationCode()}
+                      disabled={forgotLoading}
+                      className="text-xs text-indigo-600 dark:text-indigo-400 font-medium hover:underline inline-flex items-center gap-1"
+                    >
+                      <RefreshCw className="size-3" /> Resend code
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex justify-center py-2">
+                  <InputOTP
+                    maxLength={6}
+                    value={forgotCode}
+                    onChange={(val) => setForgotCode(val.replace(/\D/g, "").slice(0, 6))}
+                    autoFocus
+                  >
+                    <InputOTPGroup className="gap-2">
+                      <InputOTPSlot index={0} className="size-11 text-lg font-bold" />
+                      <InputOTPSlot index={1} className="size-11 text-lg font-bold" />
+                      <InputOTPSlot index={2} className="size-11 text-lg font-bold" />
+                      <InputOTPSlot index={3} className="size-11 text-lg font-bold" />
+                      <InputOTPSlot index={4} className="size-11 text-lg font-bold" />
+                      <InputOTPSlot index={5} className="size-11 text-lg font-bold" />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div className="space-y-1.5">
+                <FieldLabel htmlFor="new-password">New Password</FieldLabel>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? "text" : "password"}
+                    placeholder="At least 6 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    tabIndex={-1}
+                  >
+                    {showNewPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div className="space-y-1.5">
+                <FieldLabel htmlFor="confirm-password">Confirm New Password</FieldLabel>
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Re-enter new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+                {confirmPassword && newPassword !== confirmPassword && (
+                  <p className="text-xs text-destructive font-medium">Passwords do not match</p>
+                )}
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <Button
+                  type="submit"
+                  disabled={
+                    forgotLoading ||
+                    forgotCode.length !== 6 ||
+                    newPassword.length < 6 ||
+                    newPassword !== confirmPassword
+                  }
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {forgotLoading ? "Resetting Password…" : "Reset Password & Save"}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setForgotStep("email")}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1.5 py-1"
+                >
+                  <ArrowLeft className="size-3.5" /> Back to email
+                </button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

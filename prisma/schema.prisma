@@ -288,7 +288,6 @@ model AuditEvent {
 
 model OrgSettings {
   id                        String  @id @default("default")
-  orgName                   String  @default("Northern Table Group")
   timeZone                  String  @default("Europe/London")
   weekStart                 String  @default("monday")
   defaultPayPeriod          String  @default("weekly")

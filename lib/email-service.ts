@@ -136,6 +136,13 @@ export async function sendEmailNotification(params: {
   to: string
   subject: string
   html: string
+  attachments?: Array<{
+    filename: string
+    path?: string
+    content?: Buffer | string
+    cid?: string
+    contentType?: string
+  }>
 }): Promise<{ success: boolean; message?: string }> {
   try {
     const smtpHost = process.env.SMTP_HOST
@@ -153,11 +160,13 @@ export async function sendEmailNotification(params: {
             },
           })
           await transporter.sendMail({
-            from: process.env.SMTP_FROM || '"RotaBeat Support" <noreply@northerntable.co.uk>',
+            from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '"RotaBeat Support" <noreply@rotabeat.app>',
             to: params.to,
             subject: params.subject,
             html: params.html,
+            attachments: params.attachments || [],
           })
+          console.log(`[Email Dispatched] To: ${params.to} | Subject: ${params.subject}`)
           return { success: true }
         }
       } catch (err: any) {

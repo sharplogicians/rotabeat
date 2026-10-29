@@ -236,7 +236,6 @@ CREATE TABLE `AuditEvent` (
 -- CreateTable
 CREATE TABLE `OrgSettings` (
     `id` VARCHAR(191) NOT NULL DEFAULT 'default',
-    `orgName` VARCHAR(191) NOT NULL DEFAULT 'Northern Table Group',
     `timeZone` VARCHAR(191) NOT NULL DEFAULT 'Europe/London',
     `weekStart` VARCHAR(191) NOT NULL DEFAULT 'monday',
     `defaultPayPeriod` VARCHAR(191) NOT NULL DEFAULT 'weekly',

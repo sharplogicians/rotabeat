@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-   import { apiUrl } from '@/lib/api';
+import { sendRotaPublishedEmails } from "@/lib/rota-email"
+
 // GET /api/rota?siteId=...&weekStart=...
 export async function GET(request: Request) {
   try {
@@ -76,6 +77,15 @@ export async function POST(request: Request) {
         ...(status === "locked" ? { lockedAt: new Date() } : {}),
       },
     })
+
+    // If rota is published, send schedule emails to employees
+    if (status === "published") {
+      try {
+        await sendRotaPublishedEmails(siteId, weekStart)
+      } catch (emailErr) {
+        console.error("Non-blocking error dispatching rota publish emails:", emailErr)
+      }
+    }
 
     return NextResponse.json({ success: true, rota })
   } catch (error: any) {

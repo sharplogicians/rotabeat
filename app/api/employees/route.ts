@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma"
 import { hashPassword, hashPin, verifyPassword } from "@/lib/auth"
 import { getApiUser, enforceSiteAccess } from "@/lib/auth-guard"
 import { logAuditEvent } from "@/lib/audit"
+import { sendEmailNotification } from "@/lib/email-service"
+import fs from "fs"
+import path from "path"
 
 // Helper to generate next employee number if needed
 async function generateEmployeeNumber(): Promise<string> {
@@ -347,6 +350,228 @@ export async function POST(request: Request) {
       reason: "Created new employee record",
     })
 
+    // Dispatch welcome onboarding email with login details & official template
+    try {
+      const attachments: Array<{ filename: string; path: string; cid: string; contentType: string }> = []
+      let logoDataUri = ""
+      let iconDataUri = ""
+
+      const logoPath = path.join(process.cwd(), "public", "brand", "rotabeat-logo-trimmed.png")
+      const iconPath = path.join(process.cwd(), "public", "brand", "rotabeat-icon-trimmed.png")
+
+      if (fs.existsSync(logoPath)) {
+        const logoBuffer = fs.readFileSync(logoPath)
+        logoDataUri = `data:image/png;base64,${logoBuffer.toString("base64")}`
+        attachments.push({
+          filename: "rotabeat-logo.png",
+          path: logoPath,
+          cid: "rotabeat-logo",
+          contentType: "image/png",
+        })
+      }
+
+      if (fs.existsSync(iconPath)) {
+        const iconBuffer = fs.readFileSync(iconPath)
+        iconDataUri = `data:image/png;base64,${iconBuffer.toString("base64")}`
+        attachments.push({
+          filename: "rotabeat-icon.png",
+          path: iconPath,
+          cid: "rotabeat-icon",
+          contentType: "image/png",
+        })
+      }
+
+      const appBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000"
+      const logoSrc = attachments.some((a) => a.cid === "rotabeat-logo")
+        ? "cid:rotabeat-logo"
+        : logoDataUri || `${appBase}/brand/rotabeat-logo-trimmed.png`
+      const iconSrc = attachments.some((a) => a.cid === "rotabeat-icon")
+        ? "cid:rotabeat-icon"
+        : iconDataUri || `${appBase}/brand/rotabeat-icon-trimmed.png`
+
+      const locationLabel = `${site.name}${site.town ? ` (${site.town})` : ""}`
+      const fullName = `${employee.firstName} ${employee.lastName}`
+      const pinDisplay = rawPin || "Contact Manager"
+
+      const welcomeHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Welcome to RotaBeat</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 40px 16px;">
+            <tr>
+              <td align="center">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 540px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+                  
+                  <!-- Brand Top Accent Bar -->
+                  <tr>
+                    <td style="height: 5px; background: linear-gradient(90deg, #4F46E5 0%, #7C3AED 50%, #EC4899 100%);"></td>
+                  </tr>
+
+                  <!-- Header with Official RotaBeat Logo -->
+                  <tr>
+                    <td style="background-color: #ffffff; padding: 28px 24px 20px 24px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+                      <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                        <tr>
+                          <td align="center">
+                            <img src="${logoSrc}" alt="RotaBeat Logo" width="176" style="display: block; width: 176px; height: auto; border: 0; outline: none; margin: 0 auto;" />
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin: 8px 0 0 0; color: #64748b; font-size: 13px; font-weight: 500; letter-spacing: 0.2px;">
+                        Workforce &amp; Attendance Platform
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- Content Area with RotaBeat Icon -->
+                  <tr>
+                    <td style="padding: 32px 30px;">
+                      <table border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                        <tr>
+                          <td style="vertical-align: middle; padding-right: 12px;">
+                            <img src="${iconSrc}" alt="RotaBeat Icon" width="34" style="display: block; width: 34px; height: auto; border: 0;" />
+                          </td>
+                          <td style="vertical-align: middle;">
+                            <h2 style="margin: 0; color: #0f172a; font-size: 20px; font-weight: 700;">
+                              Welcome to the Team!
+                            </h2>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <p style="margin: 0 0 16px 0; color: #475569; font-size: 14px; line-height: 1.6;">
+                        Hello <strong>${employee.firstName}</strong>,
+                      </p>
+                      <p style="margin: 0 0 20px 0; color: #475569; font-size: 14px; line-height: 1.6;">
+                        You have been registered as an employee on <strong>RotaBeat</strong>. Below are your account Login credentials:
+                      </p>
+
+                      <!-- Credentials Card -->
+                      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin: 20px 0; overflow: hidden;">
+                        <tr>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; width: 35%; color: #64748b; font-size: 13px; font-weight: 600;">
+                            User Name :
+                          </td>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 14px; font-weight: 700;">
+                            ${fullName}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; font-weight: 600;">
+                            Email :
+                          </td>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 14px; font-weight: 500;">
+                            ${employee.email}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; font-weight: 600;">
+                            Pin :
+                          </td>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0;">
+                            <span style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; font-size: 18px; font-weight: 800; letter-spacing: 4px; color: #4F46E5; background-color: #eef2ff; border: 1px solid #c7d2fe; padding: 4px 12px; border-radius: 6px; display: inline-block;">
+                              ${pinDisplay}
+                            </span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; font-weight: 600;">
+                            Location :
+                          </td>
+                          <td style="padding: 12px 18px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 14px; font-weight: 500;">
+                            ${locationLabel}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 12px 18px; ${isSiteManager ? "border-bottom: 1px solid #e2e8f0;" : ""} color: #64748b; font-size: 13px; font-weight: 600;">
+                            Role :
+                          </td>
+                          <td style="padding: 12px 18px; ${isSiteManager ? "border-bottom: 1px solid #e2e8f0;" : ""} color: #0f172a; font-size: 14px; font-weight: 600;">
+                            ${employee.jobTitle}
+                          </td>
+                        </tr>
+                        ${isSiteManager && password
+          ? `
+                        <tr>
+                          <td style="padding: 12px 18px; color: #64748b; font-size: 13px; font-weight: 600;">
+                            Portal Password :
+                          </td>
+                          <td style="padding: 12px 18px; color: #4F46E5; font-size: 14px; font-weight: 700;">
+                            ${password}
+                          </td>
+                        </tr>
+                        `
+          : ""
+        }
+                      </table>
+
+                      <p style="margin: 24px 0 16px 0; color: #475569; font-size: 14px; line-height: 1.6;">
+                        If you have any questions or need assistance, please contact your manager or system administrator.
+                      </p>
+
+                      <p style="margin: 0; color: #475569; font-size: 14px; line-height: 1.6;">
+                        Best regards,<br /><br />
+                        <strong style="color: #0f172a;">The RotaBeat Team</strong>
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- Footer with Brand Icon -->
+                  <tr>
+                    <td style="background-color: #f8fafc; padding: 22px 24px; border-top: 1px solid #e2e8f0; text-align: center;">
+                      <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 8px auto;">
+                        <tr>
+                          <td style="vertical-align: middle; padding-right: 6px;">
+                            <img src="${iconSrc}" alt="RotaBeat" width="18" style="display: block; width: 18px; height: auto; opacity: 0.85; border: 0;" />
+                          </td>
+                          <td style="vertical-align: middle;">
+                            <span style="color: #475569; font-size: 12px; font-weight: 700; letter-spacing: 0.3px;">RotaBeat Platform</span>
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin: 0; color: #94a3b8; font-size: 12px;">
+                        Fast &middot; Accurate &middot; Compliant Workforce Scheduling &middot; &copy; ${new Date().getFullYear()} RotaBeat
+                      </p>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `
+
+      const emailResult = await sendEmailNotification({
+        to: employee.email,
+        subject: `Welcome to RotaBeat — Your Account & Clock-In Details`,
+        html: welcomeHtml,
+        attachments,
+      })
+
+      // Record in NotificationAuditLog
+      await prisma.notificationAuditLog.create({
+        data: {
+          type: "employee_welcome",
+          recipient: employee.email,
+          siteId: primarySiteId,
+          status: emailResult.success ? "SENT" : "SIMULATED",
+          reason: emailResult.success
+            ? "Welcome onboarding email dispatched."
+            : "Logged (SMTP not configured or simulation mode).",
+        },
+      }).catch(() => { })
+    } catch (emailErr) {
+      console.error("Failed to send welcome email to employee:", emailErr)
+      // Do not block employee creation if email delivery fails
+    }
+
     return NextResponse.json({ success: true, employee }, { status: 201 })
   } catch (error: any) {
     console.error("POST /api/employees error:", error)
@@ -588,7 +813,7 @@ export async function PUT(request: Request) {
           'UPDATE `Employee` SET `faceEmbedding` = NULL WHERE `id` = ?',
           id
         )
-      } catch (embErr) {}
+      } catch (embErr) { }
     }
 
     // Log Audit Event

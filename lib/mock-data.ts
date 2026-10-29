@@ -10,8 +10,6 @@ import type {
   WeeklyApproval,
 } from "./types"
 
-export const ORG_NAME = "Northern Table Group"
-
 // ---------------------------------------------------------------------------
 // Sites (Exactly 2 Initial Clean Locations)
 // ---------------------------------------------------------------------------
@@ -115,7 +113,7 @@ export const AUDIT_LOG: AuditEvent[] = []
 // ---------------------------------------------------------------------------
 
 export const ORG_SETTINGS: OrgSettings = {
-  orgName: ORG_NAME,
+  orgName: "",
   timeZone: "Europe/London",
   weekStart: "monday",
   defaultPayPeriod: "weekly",

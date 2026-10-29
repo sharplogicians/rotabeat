@@ -79,8 +79,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
 
   // Manager password & Employee PIN states
   const [password, setPassword] = React.useState("")
-  const [currentPassword, setCurrentPassword] = React.useState("")
-  const [newPassword, setNewPassword] = React.useState("")
+  const [showPassword, setShowPassword] = React.useState(false)
   const [pin, setPin] = React.useState(employee?.pin ?? "")
   const [showPin, setShowPin] = React.useState(false)
   const [profileImage, setProfileImage] = React.useState<string>(employee?.profileImage ?? "")
@@ -148,8 +147,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       setStartDate(employee?.startDate ?? "")
       setStatus(employee?.status ?? "active")
       setPassword("")
-      setCurrentPassword("")
-      setNewPassword("")
+      setShowPassword(false)
       setPin(employee?.pin ?? "")
       setShowPin(false)
       setProfileImage(employee?.profileImage ?? "")
@@ -262,15 +260,6 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
         if (!password || password.length < 4) {
           next.password = "Password is required for Site Manager (min 4 characters)."
         }
-      } else {
-        if (newPassword.trim()) {
-          if (!currentPassword.trim()) {
-            next.currentPassword = "Current password is required to update password."
-          }
-          if (newPassword.length < 4) {
-            next.newPassword = "New password must be at least 4 characters."
-          }
-        }
       }
     }
 
@@ -317,8 +306,6 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       leavingDate: employee?.leavingDate,
       leavingReason: employee?.leavingReason,
       password: password.trim(),
-      currentPassword: currentPassword.trim(),
-      newPassword: newPassword.trim(),
       pin: isSiteManager ? "" : pin.trim(),
     }
 
@@ -332,11 +319,7 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
       const data = await res.json()
 
       if (!res.ok || !data.success) {
-        if (data.message.includes("Current password")) {
-          setErrors({ currentPassword: data.message })
-        } else {
-          toast.error(data.message || "Failed to save employee in database.")
-        }
+        toast.error(data.message || "Failed to save employee in database.")
         setSubmitting(false)
         return
       }
@@ -631,57 +614,40 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
               ) : null}
             </Field>
 
-            {jobTitle === "Site Manager" && (
+            {jobTitle === "Site Manager" && !isEdit && (
               <FieldSet className="border-t border-border pt-3">
                 <FieldLegend variant="label">Site Manager Account Security</FieldLegend>
                 <FieldGroup className="gap-3 mt-2">
-                  {!isEdit ? (
-                    <Field data-invalid={Boolean(errors.password)}>
-                      <FieldLabel htmlFor="managerPassword">Account Password *</FieldLabel>
+                  <Field data-invalid={Boolean(errors.password)}>
+                    <FieldLabel htmlFor="managerPassword">Account Password *</FieldLabel>
+                    <div className="relative">
                       <Input
                         id="managerPassword"
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         placeholder="Create manager password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         aria-invalid={Boolean(errors.password)}
+                        className="pr-10"
                       />
-                      {errors.password ? (
-                        <FieldDescription>{errors.password}</FieldDescription>
-                      ) : (
-                        <FieldDescription className="text-xs text-muted-foreground">
-                          Compulsory for Site Managers to sign into their dashboard.
-                        </FieldDescription>
-                      )}
-                    </Field>
-                  ) : (
-                    <>
-                      <Field data-invalid={Boolean(errors.currentPassword)}>
-                        <FieldLabel htmlFor="currentPassword">Current Password</FieldLabel>
-                        <Input
-                          id="currentPassword"
-                          type="password"
-                          placeholder="Enter current password to verify"
-                          value={currentPassword}
-                          onChange={(e) => setCurrentPassword(e.target.value)}
-                          aria-invalid={Boolean(errors.currentPassword)}
-                        />
-                        {errors.currentPassword && <FieldDescription>{errors.currentPassword}</FieldDescription>}
-                      </Field>
-                      <Field data-invalid={Boolean(errors.newPassword)}>
-                        <FieldLabel htmlFor="newPassword">New Password</FieldLabel>
-                        <Input
-                          id="newPassword"
-                          type="password"
-                          placeholder="Enter new password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          aria-invalid={Boolean(errors.newPassword)}
-                        />
-                        {errors.newPassword && <FieldDescription>{errors.newPassword}</FieldDescription>}
-                      </Field>
-                    </>
-                  )}
+                      <button
+                        type="button"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+                        onClick={() => setShowPassword(!showPassword)}
+                        tabIndex={-1}
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                    {errors.password ? (
+                      <FieldDescription>{errors.password}</FieldDescription>
+                    ) : (
+                      <FieldDescription className="text-xs text-muted-foreground">
+                        Compulsory for Site Managers to sign into their dashboard.
+                      </FieldDescription>
+                    )}
+                  </Field>
                 </FieldGroup>
               </FieldSet>
             )}

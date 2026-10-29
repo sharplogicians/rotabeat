@@ -58,7 +58,7 @@ async function main() {
     const testSetting = await prisma.orgSettings.upsert({
       where: { id: "default" },
       update: {},
-      create: { id: "default", orgName: "Northern Table Group" }
+      
     })
     console.log("OrgSettings read/upsert verified: orgName =", testSetting.orgName)
 
