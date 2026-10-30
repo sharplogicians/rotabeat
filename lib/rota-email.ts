@@ -61,15 +61,7 @@ export async function sendRotaPublishedEmails(
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
     })
 
-    // 4. Fetch all active employees assigned to this site
-    const siteEmployees = await prisma.employee.findMany({
-      where: {
-        primarySiteId: siteId,
-        status: "active",
-      },
-    })
-
-    // 5. Build unique map of active employees to notify
+    // 4. Build unique map of active employees who have shifts scheduled this week
     const employeeMap = new Map<
       string,
       {
@@ -81,13 +73,7 @@ export async function sendRotaPublishedEmails(
       }
     >()
 
-    for (const emp of siteEmployees) {
-      if (emp.email && emp.email.includes("@")) {
-        employeeMap.set(emp.id, emp)
-      }
-    }
-
-    // Include any employees with shifts scheduled at this site even if primary site differs
+    // Only notify employees who have at least one shift scheduled for this week
     for (const s of shifts) {
       if (
         s.employee &&
@@ -157,6 +143,10 @@ export async function sendRotaPublishedEmails(
     for (const emp of employeeMap.values()) {
       try {
         const empShifts = shifts.filter((s) => s.employeeId === emp.id)
+        if (empShifts.length === 0) {
+          // Double safety: Do not send email if employee has no shifts scheduled this week
+          continue
+        }
 
         let totalScheduledMinutes = 0
         for (const s of empShifts) {
