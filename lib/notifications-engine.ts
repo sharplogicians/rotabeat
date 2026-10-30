@@ -341,6 +341,12 @@ export async function detectWeeklyApprovals() {
             }),
           },
         })
+
+        // Dispatch branded weekly approval due email to Site Manager
+        const { sendWeeklyApprovalDueReminder } = await import("@/lib/automated-emails")
+        await sendWeeklyApprovalDueReminder({ siteId: app.siteId, weekStart: app.weekStart }).catch((emailErr) =>
+          console.error("sendWeeklyApprovalDueReminder error:", emailErr)
+        )
       }
     }
   } catch (err) {
@@ -526,6 +532,19 @@ export async function detectAndMarkLateAbsences() {
             }),
           },
         })
+
+        // Dispatch urgent Missed Clock-In alert to Site Manager & Business Owner
+        const { sendMissedClockInAlert } = await import("@/lib/automated-emails")
+        await sendMissedClockInAlert({
+          shiftId: shift.id,
+          employeeId: shift.employeeId,
+          employeeName: empName,
+          siteId: shift.siteId,
+          siteName,
+          scheduledStartTime: shift.startTime,
+          role: shift.role,
+          lateMinutes: lateMins,
+        }).catch((alertErr) => console.error("sendMissedClockInAlert error:", alertErr))
       }
     }
   } catch (err) {
@@ -537,10 +556,15 @@ export async function detectAndMarkLateAbsences() {
  * Combined Detector Runner
  */
 export async function runAllNotificationDetectors() {
+  const { sendUpcomingShiftReminders } = await import("@/lib/automated-emails")
   await Promise.all([
     detectAndMarkLateAbsences(),
     detectMissingPunches(),
     detectShiftConflicts(),
     detectWeeklyApprovals(),
+    sendUpcomingShiftReminders().catch((remErr) => {
+      console.error("sendUpcomingShiftReminders error:", remErr)
+      return { sentCount: 0 }
+    }),
   ])
 }
