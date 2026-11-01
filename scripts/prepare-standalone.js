@@ -35,6 +35,19 @@ const publicDest = path.join(standaloneDir, 'public');
 if (fs.existsSync(publicSrc)) {
   console.log('  -> Copying public/ to standalone/public...');
   copyDirSync(publicSrc, publicDest);
+
+  // 1b. Also copy contents of public/ directly to standalone root for direct Apache serving
+  console.log('  -> Copying public/ assets directly to standalone root for direct Apache serving...');
+  const publicEntries = fs.readdirSync(publicSrc);
+  for (const entry of publicEntries) {
+    const srcPath = path.join(publicSrc, entry);
+    const destPath = path.join(standaloneDir, entry);
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
 }
 
 // 2. Copy .next/static to standalone/.next/static (required by Next standalone server)
@@ -133,6 +146,44 @@ const dir = path.resolve(__dirname);
 process.env.NODE_ENV = 'production';
 process.chdir(dir);
 
+// Explicitly load .env file into process.env for Standalone runtime
+try {
+  const { loadEnvConfig } = require('@next/env');
+  loadEnvConfig(dir);
+} catch (e) {
+  console.warn('Notice: @next/env load skipped, using fallback reader:', e.message);
+}
+
+// Fallback reader to guarantee all .env variables are present
+try {
+  const envFile = path.join(dir, '.env');
+  if (fs.existsSync(envFile)) {
+    const rawEnv = fs.readFileSync(envFile, 'utf-8');
+    rawEnv.split(/\r?\n/).forEach(function(line) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    });
+  }
+} catch (e) {}
+
+if (process.env.DATABASE_URL) {
+  const sanitized = process.env.DATABASE_URL.replace(/:([^:@]+)@/, ':****@');
+  console.log('✅ Loaded DATABASE_URL from .env:', sanitized);
+} else {
+  console.warn('⚠️ WARNING: DATABASE_URL is not set in process.env!');
+}
+
 // Load Next.js configuration
 let nextConfig = {};
 try {
@@ -189,7 +240,7 @@ console.log('  -> Generated universal server.js and app.js with native Phusion P
 // 8. Create production .env for deployment
 const envProdPath = path.join(standaloneDir, '.env');
 const envContent = `# Production Environment Variables for working-emerald-mockingbird.72-167-148-243.cpanel.site
-DATABASE_URL="mysql://rotaflow_user:bMEX6Kloe22M@localhost:3306/rotaflow_db"
+DATABASE_URL="mysql://rotaflow_user:bMEX6Kloe22M@localhost:3306/rotabeat"
 NEXT_PUBLIC_BASE_PATH=
 NEXT_PUBLIC_APP_URL=http://working-emerald-mockingbird.72-167-148-243.cpanel.site
 NODE_ENV=production
@@ -209,7 +260,11 @@ RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# 2. Forward everything else to port 3000 where RotaBeat is running
+# 2. Check and serve static files from public/ subfolder directly
+RewriteCond %{DOCUMENT_ROOT}/public/$1 -f
+RewriteRule ^(.*)$ public/$1 [L]
+
+# 3. Forward everything else to port 3000 where RotaBeat is running
 RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
 `;
 fs.writeFileSync(htaccessPath, htaccessContent, 'utf-8');

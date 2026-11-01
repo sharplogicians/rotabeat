@@ -104,8 +104,9 @@ export const SESSION_COOKIE_NAME = "rotabeat_session"
 
 export function getSessionCookieHeader(token: string): string {
   const maxAge = SESSION_DURATION_MS / 1000
-  // In production, add Secure flag. In dev, omit it so localhost works.
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : ""
+  // In production with HTTPS, add Secure flag. For plain HTTP deployments or dev, omit it so cookies persist.
+  const isHttps = process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://")
+  const secure = (process.env.NODE_ENV === "production" && isHttps) ? "; Secure" : ""
   return `${SESSION_COOKIE_NAME}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`
 }
 
