@@ -237,19 +237,25 @@ fs.writeFileSync(path.join(standaloneDir, 'server.js'), passengerServerCode, 'ut
 fs.writeFileSync(path.join(standaloneDir, 'app.js'), passengerServerCode, 'utf-8');
 console.log('  -> Generated universal server.js and app.js with native Phusion Passenger support...');
 
-// 8. Create production .env for deployment
+// 8. Copy or create production .env for deployment
 const envProdPath = path.join(standaloneDir, '.env');
-const envContent = `# Production Environment Variables for working-emerald-mockingbird.72-167-148-243.cpanel.site
-DATABASE_URL="mysql://rotaflow_user:bMEX6Kloe22M@localhost:3306/rotabeat"
+const rootEnvPath = path.join(rootDir, '.env');
+if (fs.existsSync(rootEnvPath)) {
+  fs.copyFileSync(rootEnvPath, envProdPath);
+  console.log('  -> Copied project root .env into standalone directory...');
+} else {
+  const envContent = `# Production Environment Variables
+DATABASE_URL="mysql://rotabeat:password@localhost:3306/rotabeat"
 NEXT_PUBLIC_BASE_PATH=
-NEXT_PUBLIC_APP_URL=http://working-emerald-mockingbird.72-167-148-243.cpanel.site
+NEXT_PUBLIC_APP_URL=https://rotabeat.com
 NODE_ENV=production
 PORT=3000
 SESSION_SECRET=rotaflow_production_secure_secret_key_8f3a1d9c
-APP_ROOT_DIR=/home/rotaflow/public_html
+APP_ROOT_DIR=/home/gqzw9xpjpzon/public_html/rotabeat.com
 `;
-fs.writeFileSync(envProdPath, envContent, 'utf-8');
-console.log('  -> Generated production .env in standalone directory...');
+  fs.writeFileSync(envProdPath, envContent, 'utf-8');
+  console.log('  -> Generated production .env in standalone directory...');
+}
 
 // 9. Create .htaccess for Apache Reverse Proxy (tested & working)
 const htaccessPath = path.join(standaloneDir, '.htaccess');
@@ -270,12 +276,30 @@ RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
 fs.writeFileSync(htaccessPath, htaccessContent, 'utf-8');
 console.log('  -> Generated .htaccess in standalone directory...');
 
+// 9b. Clean up unused Windows binary engines and temp files to keep zip well under 100MB
+const prismaStandaloneClient = path.join(standaloneDir, 'node_modules', '.prisma', 'client');
+if (fs.existsSync(prismaStandaloneClient)) {
+  const prismaFiles = fs.readdirSync(prismaStandaloneClient);
+  for (const file of prismaFiles) {
+    if (file.includes('.tmp') || file.endsWith('windows.dll.node')) {
+      try {
+        fs.unlinkSync(path.join(prismaStandaloneClient, file));
+      } catch (e) {}
+    }
+  }
+  console.log('  -> Cleaned unused temp and Windows binaries from Prisma client...');
+}
+
 // 10. Create deployable zip archive: deploy_rota_v2.zip
 const zipDest = path.join(rootDir, 'deploy_rota_v2.zip');
 try {
   console.log('  -> Creating deploy_rota_v2.zip...');
   if (process.platform === 'win32') {
-    execSync(`powershell -Command "Compress-Archive -Path '${standaloneDir}\\*' -DestinationPath '${zipDest}' -Force"`, { stdio: 'inherit' });
+    try {
+      execSync(`tar -a -c -f "${zipDest}" -C "${standaloneDir}" .`, { stdio: 'inherit' });
+    } catch {
+      execSync(`powershell -NoProfile -Command "$ProgressPreference = 'SilentlyContinue'; Compress-Archive -Path (Get-ChildItem -Force -Path '${standaloneDir}') -DestinationPath '${zipDest}' -Force"`, { stdio: 'inherit' });
+    }
   } else {
     execSync(`cd "${standaloneDir}" && zip -r "${zipDest}" .`, { stdio: 'inherit' });
   }
