@@ -2,6 +2,7 @@
   "name": "rotabeat",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.34.9",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build --webpack",
