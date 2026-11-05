@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "build:local": "node --require ./scripts/mock-node.js ./node_modules/next/dist/bin/next build",
     "postbuild": "node scripts/prepare-standalone.js",
     "start": "next start",
