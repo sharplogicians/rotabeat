@@ -1,5 +1,4 @@
 import { PrismaClient } from "@prisma/client"
-import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 
 const globalForPrisma = globalThis as unknown as {
@@ -15,6 +14,8 @@ const hostedDatabaseUrl =
 
 // Allow the host to select the OpenSSL 3 engine if Prisma's runtime detection falls back to 1.1.
 if (process.env.PRISMA_USE_MUSL_OPENSSL_3 === "1" && !process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
+  // Use Node's resolver directly so webpack cannot rewrite these runtime lookups.
+  const { createRequire } = process.getBuiltinModule("node:module")
   const appRequire = createRequire(join(process.cwd(), "package.json"))
   const prismaRequire = createRequire(appRequire.resolve("@prisma/client"))
   const generatedClientDir = dirname(prismaRequire.resolve(".prisma/client/package.json"))
