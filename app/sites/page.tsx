@@ -112,68 +112,94 @@ export default function SitesPage() {
           </Button>
         </div>
 
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {state.sites.map((site) => {
-            return (
-              <Card key={site.id} className="flex flex-col justify-between">
-                <CardHeader className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <Building2 className="size-5" />
+        {state.sites.length === 0 ? (
+          <Empty className="py-16">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Building2 />
+              </EmptyMedia>
+              <EmptyTitle>No locations added yet</EmptyTitle>
+              <EmptyDescription>
+                Get started by adding your first business location. Once created, you will be able to add employees, build rotas, and track attendance.
+              </EmptyDescription>
+              <div className="pt-2">
+                <Button
+                  onClick={() => {
+                    setEditingSite(undefined)
+                    setSiteSheetOpen(true)
+                  }}
+                  className="gap-2"
+                >
+                  <Plus className="size-4" />
+                  Add your first location
+                </Button>
+              </div>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {state.sites.map((site) => {
+              return (
+                <Card key={site.id} className="flex flex-col justify-between">
+                  <CardHeader className="flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <Building2 className="size-5" />
+                        </div>
+                        <div className="flex flex-col">
+                          <h2 className="font-heading text-base font-semibold">{site.name}</h2>
+                          <span className="text-xs text-muted-foreground">{site.town}</span>
+                        </div>
                       </div>
-                      <div className="flex flex-col">
-                        <h2 className="font-heading text-base font-semibold">{site.name}</h2>
-                        <span className="text-xs text-muted-foreground">{site.town}</span>
-                      </div>
+                      <Badge variant={site.status === "active" ? "default" : "secondary"} className="font-normal">
+                        {site.status === "active" ? "Active" : "Inactive"}
+                      </Badge>
                     </div>
-                    <Badge variant={site.status === "active" ? "default" : "secondary"} className="font-normal">
-                      {site.status === "active" ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
 
-                  <div className="flex flex-col gap-1.5 text-sm text-muted-foreground pt-1">
-                    <p className="flex items-center gap-1.5">
-                      <MapPin className="size-3.5 shrink-0" />
-                      {site.address}
-                    </p>
-                  </div>
-                </CardHeader>
+                    <div className="flex flex-col gap-1.5 text-sm text-muted-foreground pt-1">
+                      <p className="flex items-center gap-1.5">
+                        <MapPin className="size-3.5 shrink-0" />
+                        {site.address}
+                      </p>
+                    </div>
+                  </CardHeader>
 
-                <CardContent className="pt-0 flex items-center gap-2 border-t border-border mt-3 pt-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => {
-                      setEditingSite(site)
-                      setSiteSheetOpen(true)
-                    }}
-                  >
-                    <Pencil data-icon="inline-start" />
-                    Edit Location
-                  </Button>
-                  <Button
-                    variant={site.status === "active" ? "ghost" : "secondary"}
-                    size="sm"
-                    onClick={() => handleToggleStatus(site)}
-                  >
-                    {site.status === "active" ? "Deactivate" : "Activate"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
-                    onClick={() => setSiteToDelete(site)}
-                    title="Delete location"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                  <CardContent className="pt-0 flex items-center gap-2 border-t border-border mt-3 pt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => {
+                        setEditingSite(site)
+                        setSiteSheetOpen(true)
+                      }}
+                    >
+                      <Pencil data-icon="inline-start" />
+                      Edit Location
+                    </Button>
+                    <Button
+                      variant={site.status === "active" ? "ghost" : "secondary"}
+                      size="sm"
+                      onClick={() => handleToggleStatus(site)}
+                    >
+                      {site.status === "active" ? "Deactivate" : "Activate"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0"
+                      onClick={() => setSiteToDelete(site)}
+                      title="Delete location"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <SiteFormSheet

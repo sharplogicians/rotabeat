@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { shiftSpanMinutes } from "@/lib/calc"
+import { getWeekStart } from "@/lib/date-utils"
 import { getApiUser, enforceSiteAccess } from "@/lib/auth-guard"
 import { logAuditEvent } from "@/lib/audit"
 
@@ -163,6 +164,18 @@ export async function POST(request: Request) {
       reason: "Shift scheduled",
     })
 
+    // Mark the week's rota as draft so newly scheduled shift can be published
+    try {
+      const shiftWeekStart = getWeekStart(date)
+      await prisma.rota.upsert({
+        where: { siteId_weekStart: { siteId, weekStart: shiftWeekStart } },
+        update: { status: "draft" },
+        create: { siteId, weekStart: shiftWeekStart, status: "draft" },
+      })
+    } catch (rotaErr) {
+      console.error("Non-blocking error updating rota status to draft on shift create:", rotaErr)
+    }
+
     return NextResponse.json({ success: true, shift }, { status: 201 })
   } catch (error: any) {
     console.error("POST /api/shifts error:", error)
@@ -276,6 +289,26 @@ export async function PUT(request: Request) {
       reason: "Shift updated",
     })
 
+    // Mark the week's rota as draft so updated shift changes can be published
+    try {
+      const oldWeekStart = getWeekStart(existingShift.date)
+      await prisma.rota.upsert({
+        where: { siteId_weekStart: { siteId: existingShift.siteId, weekStart: oldWeekStart } },
+        update: { status: "draft" },
+        create: { siteId: existingShift.siteId, weekStart: oldWeekStart, status: "draft" },
+      })
+      if (date && date !== existingShift.date) {
+        const newWeekStart = getWeekStart(date)
+        await prisma.rota.upsert({
+          where: { siteId_weekStart: { siteId: (siteId || existingShift.siteId), weekStart: newWeekStart } },
+          update: { status: "draft" },
+          create: { siteId: (siteId || existingShift.siteId), weekStart: newWeekStart, status: "draft" },
+        })
+      }
+    } catch (rotaErr) {
+      console.error("Non-blocking error updating rota status to draft on shift update:", rotaErr)
+    }
+
     return NextResponse.json({ success: true, shift })
   } catch (error: any) {
     console.error("PUT /api/shifts error:", error)
@@ -332,6 +365,18 @@ export async function DELETE(request: Request) {
       },
       reason: "Shift deleted",
     })
+
+    // Mark the week's rota as draft so deletion can be published
+    try {
+      const shiftWeekStart = getWeekStart(existingShift.date)
+      await prisma.rota.upsert({
+        where: { siteId_weekStart: { siteId: existingShift.siteId, weekStart: shiftWeekStart } },
+        update: { status: "draft" },
+        create: { siteId: existingShift.siteId, weekStart: shiftWeekStart, status: "draft" },
+      })
+    } catch (rotaErr) {
+      console.error("Non-blocking error updating rota status to draft on shift delete:", rotaErr)
+    }
 
     return NextResponse.json({ success: true, message: "Shift deleted successfully." })
   } catch (error: any) {

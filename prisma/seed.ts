@@ -86,10 +86,9 @@ async function main() {
   // 3. Org Settings
   await prisma.orgSettings.upsert({
     where: { id: "default" },
-    update: { orgName: "" },
+    update: {},
     create: {
       id: "default",
-      orgName: "",
       timeZone: "Europe/London",
       weekStart: "monday",
     },

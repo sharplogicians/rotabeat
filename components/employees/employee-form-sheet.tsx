@@ -2,6 +2,7 @@
 import { apiUrl } from '@/lib/api';
 
 import * as React from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import {
@@ -180,6 +181,10 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
   }, [open, employee?.id])
 
   function validate(): boolean {
+    if (sites.length === 0) {
+      toast.error("Location Required: You must add at least one location before creating an employee.")
+      return false
+    }
     if (cannotEditSiteManager) {
       toast.error("Site Managers can only be edited or deleted by a Business Owner.")
       return false
@@ -373,6 +378,30 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
           </SheetDescription>
         </SheetHeader>
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-4">
+          {sites.length === 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive-foreground dark:bg-destructive/15 flex flex-col gap-2">
+              <div className="flex items-center gap-2 font-semibold text-destructive">
+                <AlertCircle className="size-4 shrink-0" />
+                <span>Location Required</span>
+              </div>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                No business location has been added yet. Employees cannot be created without an assigned location. Please add a location first.
+              </p>
+              {isBusinessOwner && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="w-fit text-xs h-7 gap-1 mt-0.5"
+                  render={<Link href="/sites" />}
+                  onClick={() => onOpenChange(false)}
+                >
+                  <Building2 className="size-3 mr-1" />
+                  Go to Manage Locations
+                </Button>
+              )}
+            </div>
+          )}
           {/* Profile Image Upload */}
           <div className="flex flex-col items-center gap-2 pb-2">
             <span className="text-xs font-semibold text-foreground flex items-center gap-1">
@@ -534,7 +563,29 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
               {errors.phone && <FieldDescription className="text-destructive text-xs">{errors.phone}</FieldDescription>}
             </Field>
 
-            {state.currentSiteId ? (
+            {sites.length === 0 ? (
+              <Field data-invalid={true}>
+                <FieldLabel>Primary site *</FieldLabel>
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive flex items-center justify-between gap-2">
+                  <span>No locations available. Add a location first.</span>
+                  {isBusinessOwner && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 shrink-0"
+                      render={<Link href="/sites" />}
+                      onClick={() => onOpenChange(false)}
+                    >
+                      Add Location
+                    </Button>
+                  )}
+                </div>
+                <FieldDescription className="text-destructive text-xs">
+                  An employee must be assigned to an active location.
+                </FieldDescription>
+              </Field>
+            ) : (state.currentSiteId && sites.some((s) => s.id === state.currentSiteId)) ? (
               <Field>
                 <FieldLabel>Primary site *</FieldLabel>
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-medium text-foreground">
@@ -792,8 +843,18 @@ export function EmployeeFormSheet({ open, onOpenChange, employee }: EmployeeForm
           )}
 
           <SheetFooter className="px-0">
-            <Button type="submit" disabled={submitting || cannotEditSiteManager} className="w-full">
-              {submitting ? "Saving…" : isEdit ? "Save changes" : "Add employee"}
+            <Button
+              type="submit"
+              disabled={submitting || cannotEditSiteManager || sites.length === 0}
+              className="w-full"
+            >
+              {sites.length === 0
+                ? "Location Required — Add location first"
+                : submitting
+                ? "Saving…"
+                : isEdit
+                ? "Save changes"
+                : "Add employee"}
             </Button>
             <SheetClose render={<Button type="button" variant="outline" className="w-full" />}>Cancel</SheetClose>
           </SheetFooter>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getWeekStart } from "@/lib/date-utils"
 
 // POST /api/shifts/copy — Copy an existing shift to another target date
 export async function POST(request: Request) {
@@ -60,6 +61,18 @@ export async function POST(request: Request) {
         },
       },
     })
+
+    // Mark the target week's rota as draft so copied shift can be published
+    try {
+      const targetWeekStart = getWeekStart(targetDate)
+      await prisma.rota.upsert({
+        where: { siteId_weekStart: { siteId: sourceShift.siteId, weekStart: targetWeekStart } },
+        update: { status: "draft" },
+        create: { siteId: sourceShift.siteId, weekStart: targetWeekStart, status: "draft" },
+      })
+    } catch (rotaErr) {
+      console.error("Non-blocking error updating rota status to draft on shift copy:", rotaErr)
+    }
 
     return NextResponse.json({
       success: true,

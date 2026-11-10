@@ -703,7 +703,18 @@ function reducer(state: AppState, action: Action): AppState {
       const siteExists = action.sites.some((s) => s.id === state.currentSiteId)
       let resolvedSiteId = state.currentSiteId
 
-      if (!siteExists && action.sites.length > 0) {
+      if (action.sites.length === 0) {
+        resolvedSiteId = ""
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.removeItem("rotabeat_current_site_id")
+            localStorage.removeItem("rotaflow_current_site_id")
+            sessionStorage.removeItem("rotabeat_current_site_id")
+            sessionStorage.removeItem("rotaflow_current_site_id")
+            document.cookie = "rotabeat_last_site=; Path=/; Max-Age=0; SameSite=Lax"
+          } catch { }
+        }
+      } else if (!siteExists && action.sites.length > 0) {
         let savedSite: string | null = null
         if (typeof window !== "undefined") {
           try {

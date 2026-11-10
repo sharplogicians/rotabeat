@@ -205,6 +205,31 @@ export default function AttendancePage() {
     { value: "missing_break_end", label: "Missing Break End" },
   ]
 
+  if (state.sites.length === 0) {
+    return (
+      <AdminShell crumbs={[{ label: "Attendance" }]}>
+        <Empty className="py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Clock className="text-muted-foreground" />
+            </EmptyMedia>
+            <EmptyTitle>Location Required</EmptyTitle>
+            <EmptyDescription>
+              No locations have been added yet. Please add a business location first before recording or reviewing attendance.
+            </EmptyDescription>
+            {(state.role === "business_owner" || state.role === "head_office") && (
+              <div className="pt-2">
+                <Button render={<Link href="/sites" />}>
+                  Add a Location
+                </Button>
+              </div>
+            )}
+          </EmptyHeader>
+        </Empty>
+      </AdminShell>
+    )
+  }
+
   return (
     <AdminShell crumbs={[{ label: "Attendance" }]}>
       <div className="flex flex-col gap-6">

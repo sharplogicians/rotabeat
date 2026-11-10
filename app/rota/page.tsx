@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { apiUrl } from '@/lib/api';
 import { toast } from "sonner"
@@ -57,6 +58,8 @@ export default function RotaPage() {
   const weekEnd = React.useMemo(() => addDays(weekStart, 6), [weekStart])
 
   const [rotaStatus, setRotaStatus] = React.useState<"draft" | "published" | "locked">("draft")
+  const [publishedAt, setPublishedAt] = React.useState<string | null>(null)
+  const [statusBeforeLock, setStatusBeforeLock] = React.useState<"draft" | "published">("draft")
   const [shifts, setShifts] = React.useState<Shift[]>([])
   const [loading, setLoading] = React.useState(true)
 
@@ -82,30 +85,49 @@ export default function RotaPage() {
   }, [state.employees, site?.id])
 
   // Load shifts & rota status from API/store
-  const fetchRotaData = React.useCallback(async () => {
+  const fetchRotaData = React.useCallback(async (initialLoad = false) => {
     if (!site?.id || !weekStart) return
-    setLoading(true)
+    if (initialLoad) {
+      setLoading(true)
+    }
     try {
-      // 1. Fetch Rota Status
-      const rotaRes = await fetch(apiUrl(`/api/rota?siteId=${site.id}&weekStart=${weekStart}`))
+      // 1. Fetch Rota Status with cache busting
+      const rotaRes = await fetch(
+        apiUrl(`/api/rota?siteId=${site.id}&weekStart=${weekStart}&_t=${Date.now()}`),
+        { cache: "no-store" }
+      )
       const rotaData = await rotaRes.json()
       if (rotaData.success && rotaData.rota) {
-        setRotaStatus(rotaData.rota.status as any)
+        const st = rotaData.rota.status as "draft" | "published" | "locked"
+        setRotaStatus(st)
+        setPublishedAt(rotaData.rota.publishedAt || null)
+        if (st !== "locked") {
+          setStatusBeforeLock(st)
+        }
       } else {
         setRotaStatus("draft")
+        setPublishedAt(null)
+        setStatusBeforeLock("draft")
       }
 
-      // 2. Fetch Shifts for week
-      const shiftRes = await fetch(apiUrl(`/api/shifts?siteId=${site.id}&weekStart=${weekStart}&endDate=${weekEnd}`))
+      // 2. Fetch Shifts for week with cache busting
+      const shiftRes = await fetch(
+        apiUrl(`/api/shifts?siteId=${site.id}&weekStart=${weekStart}&endDate=${weekEnd}&_t=${Date.now()}`),
+        { cache: "no-store" }
+      )
       const shiftData = await shiftRes.json()
       if (shiftData.success && Array.isArray(shiftData.shifts)) {
         setShifts(shiftData.shifts)
+        dispatch({ type: "SET_SHIFTS", shifts: shiftData.shifts })
       } else {
         setShifts(state.shifts.filter((s) => s.siteId === site.id && s.date >= weekStart && s.date <= weekEnd))
       }
 
       // 3. Fetch attendance records for this site
-      const attRes = await fetch(apiUrl(`/api/attendance?siteId=${site.id}`))
+      const attRes = await fetch(
+        apiUrl(`/api/attendance?siteId=${site.id}&_t=${Date.now()}`),
+        { cache: "no-store" }
+      )
       const attData = await attRes.json()
       if (attData.success && Array.isArray(attData.records)) {
         setAttendanceRecords(attData.records)
@@ -130,10 +152,10 @@ export default function RotaPage() {
     } finally {
       setLoading(false)
     }
-  }, [site?.id, weekStart, weekEnd, state.shifts, dispatch])
+  }, [site?.id, weekStart, weekEnd, dispatch])
 
   React.useEffect(() => {
-    fetchRotaData()
+    fetchRotaData(true)
   }, [fetchRotaData])
 
   // Conflict calculations
@@ -241,6 +263,8 @@ export default function RotaPage() {
       const data = await res.json()
       if (data.success) {
         setRotaStatus("published")
+        setPublishedAt(data.rota?.publishedAt || new Date().toISOString())
+        setStatusBeforeLock("published")
         dispatch({ type: "SET_ROTA_STATUS", siteId: site.id, weekStart, status: "published" })
         toast.success(`Published rota for ${formatWeekRange(weekStart)}`)
       } else {
@@ -255,7 +279,12 @@ export default function RotaPage() {
 
   async function handleToggleLock() {
     if (!site) return
-    const nextStatus = isLocked ? "published" : "locked"
+    // When unlocking:
+    // If it was draft before locking (e.g. copied from previous week or draft shifts), restore to "draft".
+    // If it was published before locking, restore to "published".
+    const nextStatus: "draft" | "published" | "locked" = isLocked
+      ? (statusBeforeLock === "draft" || !publishedAt ? "draft" : "published")
+      : "locked"
     try {
       const res = await fetch(apiUrl("/api/rota"), {
         method: "POST",
@@ -269,6 +298,9 @@ export default function RotaPage() {
       const data = await res.json()
       if (data.success) {
         setRotaStatus(nextStatus)
+        if (nextStatus !== "locked") {
+          setStatusBeforeLock(nextStatus)
+        }
         dispatch({ type: "SET_ROTA_STATUS", siteId: site.id, weekStart, status: nextStatus })
         toast.success(nextStatus === "locked" ? "🔒 Rota locked for editing" : "🔓 Rota unlocked")
       } else {
@@ -295,6 +327,9 @@ export default function RotaPage() {
       const data = await res.json()
       if (data.success) {
         toast.success(data.message || "Copied previous week's shifts as a new Draft")
+        setRotaStatus("draft")
+        setStatusBeforeLock("draft")
+        setPublishedAt(null)
         fetchRotaData()
       } else {
         toast.error(data.message || "No shifts found in previous week to copy.")
@@ -306,6 +341,31 @@ export default function RotaPage() {
     }
   }
 
+  if (state.sites.length === 0) {
+    return (
+      <AdminShell crumbs={[{ label: "Weekly Rota" }]}>
+        <Empty className="py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <CalendarDays className="text-muted-foreground" />
+            </EmptyMedia>
+            <EmptyTitle>Location Required</EmptyTitle>
+            <EmptyDescription>
+              No locations have been added yet. Please add a business location first before creating or scheduling rotas.
+            </EmptyDescription>
+            {(state.role === "business_owner" || state.role === "head_office") && (
+              <div className="pt-2">
+                <Button render={<Link href="/sites" />}>
+                  Add a Location
+                </Button>
+              </div>
+            )}
+          </EmptyHeader>
+        </Empty>
+      </AdminShell>
+    )
+  }
+
   return (
     <AdminShell crumbs={[{ label: "Weekly Rota" }]}>
       <div className="flex flex-col gap-6 min-w-0 max-w-full">
@@ -315,7 +375,13 @@ export default function RotaPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold font-heading tracking-tight text-balance">Weekly Rota</h1>
               <Badge variant={rotaStatus === "published" ? "default" : rotaStatus === "locked" ? "secondary" : "outline"}>
-                {rotaStatus === "published" ? "Published" : rotaStatus === "locked" ? "Locked" : "Draft"}
+                {rotaStatus === "published"
+                  ? "Published"
+                  : rotaStatus === "locked"
+                  ? "Locked"
+                  : publishedAt
+                  ? "Draft (Unpublished Changes)"
+                  : "Draft"}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -334,9 +400,20 @@ export default function RotaPage() {
                 {isLocked ? "Unlock week" : "Lock week"}
               </Button>
             )}
-            <Button size="sm" onClick={handleRequestPublish} disabled={!canEdit || rotaStatus === "published"}>
+            <Button
+              size="sm"
+              onClick={handleRequestPublish}
+              disabled={!canEdit || rotaStatus === "published"}
+              title={
+                rotaStatus === "published"
+                  ? "All changes published. Adding or modifying shifts will allow publishing again."
+                  : isLocked
+                  ? "Unlock week to publish."
+                  : undefined
+              }
+            >
               <Send data-icon="inline-start" />
-              Publish rota
+              {publishedAt && rotaStatus === "draft" ? "Publish changes" : "Publish rota"}
             </Button>
           </div>
         </div>
@@ -559,7 +636,33 @@ export default function RotaPage() {
           date={dialogState?.date ?? null}
           shift={dialogState?.shift}
           siteId={site.id}
-          onShiftSaved={fetchRotaData}
+          onShiftSaved={(savedShift, action) => {
+            setRotaStatus("draft")
+            setStatusBeforeLock("draft")
+            if (site) {
+              dispatch({ type: "SET_ROTA_STATUS", siteId: site.id, weekStart, status: "draft" })
+            }
+            if (savedShift) {
+              const shiftList = Array.isArray(savedShift) ? savedShift : [savedShift]
+              setShifts((prev) => {
+                let updated = [...prev]
+                for (const s of shiftList) {
+                  if (action === "delete") {
+                    updated = updated.filter((item) => item.id !== s.id)
+                  } else {
+                    const idx = updated.findIndex((item) => item.id === s.id)
+                    if (idx >= 0) {
+                      updated[idx] = s
+                    } else {
+                      updated.push(s)
+                    }
+                  }
+                }
+                return updated
+              })
+            }
+            fetchRotaData()
+          }}
         />
       )}
 

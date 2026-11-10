@@ -43,7 +43,7 @@ interface ShiftDialogProps {
   date: string | null
   shift?: Shift
   siteId: string
-  onShiftSaved?: () => void
+  onShiftSaved?: (savedShift?: Shift | Shift[], action?: "add" | "update" | "delete") => void
 }
 
 export function ShiftDialog({
@@ -77,6 +77,8 @@ export function ShiftDialog({
   // Copy to another day states
   const [showCopySection, setShowCopySection] = React.useState(false)
   const [copyTargetDate, setCopyTargetDate] = React.useState<string>("")
+
+  const hasCopyTarget = Boolean(isEdit && showCopySection && copyTargetDate && copyTargetDate !== date)
 
   const weekDateList = React.useMemo(() => {
     return weekDays(state.currentWeekStart)
@@ -194,11 +196,11 @@ export function ShiftDialog({
         `Marked ${employee.firstName} as Off on ${formatDateLong(date)}`
       )
 
-      if (onShiftSaved) {
-        onShiftSaved()
-      }
-
       onOpenChange(false)
+
+      if (onShiftSaved) {
+        onShiftSaved(shift, "delete")
+      }
     } catch {
       toast.error("Failed to set day off.")
     } finally {
@@ -261,24 +263,75 @@ export function ShiftDialog({
           type: "UPDATE_SHIFT",
           shift: savedShift,
         })
-
-        toast.success(`Updated ${employee.firstName}'s shift`)
       } else {
         dispatch({
           type: "ADD_SHIFT",
           shift: savedShift,
         })
+      }
 
+      // If "Copy shift to another day" was opened and a date was selected, also create the copy!
+      let copiedShift: Shift | null = null
+      if (hasCopyTarget && copyTargetDate) {
+        try {
+          const copyRes = await fetch(apiUrl("/api/shifts"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              employeeId: employee.id,
+              siteId,
+              date: copyTargetDate,
+              startTime,
+              endTime,
+              unpaidBreakMinutes: Number(breakMinutes) || 0,
+              role: role.trim(),
+              notes: notes.trim() || undefined,
+            }),
+          })
+          const copyData = await copyRes.json()
+          if (copyData.success && copyData.shift) {
+            copiedShift = {
+              id: copyData.shift.id,
+              employeeId: copyData.shift.employeeId,
+              siteId: copyData.shift.siteId,
+              date: copyData.shift.date,
+              startTime: copyData.shift.startTime,
+              endTime: copyData.shift.endTime,
+              unpaidBreakMinutes: copyData.shift.unpaidBreakMinutes,
+              role: copyData.shift.role,
+              notes: copyData.shift.notes ?? undefined,
+            }
+            dispatch({
+              type: "ADD_SHIFT",
+              shift: copiedShift,
+            })
+          }
+        } catch (copyErr) {
+          console.error("Non-blocking error creating copy shift on form submit:", copyErr)
+        }
+      }
+
+      if (copiedShift) {
+        toast.success(
+          `Updated ${employee.firstName}'s shift & copied to ${formatDateLong(copyTargetDate)}`
+        )
+      } else if (isEdit) {
+        toast.success(`Updated ${employee.firstName}'s shift`)
+      } else {
         toast.success(
           `Added shift for ${employee.firstName} ${employee.lastName}`
         )
       }
 
-      if (onShiftSaved) {
-        onShiftSaved()
-      }
-
       onOpenChange(false)
+
+      if (onShiftSaved) {
+        const shiftsToSync: Shift[] = [savedShift]
+        if (copiedShift) shiftsToSync.push(copiedShift)
+        onShiftSaved(shiftsToSync, isEdit ? "update" : "add")
+      }
     } catch {
       toast.error("Network error while saving shift.")
     } finally {
@@ -310,11 +363,11 @@ export function ShiftDialog({
 
         toast.success("Shift removed")
 
-        if (onShiftSaved) {
-          onShiftSaved()
-        }
-
         onOpenChange(false)
+
+        if (onShiftSaved) {
+          onShiftSaved(shift, "delete")
+        }
       } else {
         toast.error(data.message || "Failed to delete shift.")
       }
@@ -326,41 +379,65 @@ export function ShiftDialog({
   }
 
   async function handleCopyShiftToDay() {
-    if (!shift || !copyTargetDate) {
+    if (!employee || !copyTargetDate) {
+      return
+    }
+
+    if (copyTargetDate === date) {
+      toast.error("Cannot copy shift to the same day.")
       return
     }
 
     setSubmitting(true)
 
     try {
-      const res = await fetch(apiUrl("/api/shifts/copy"), {
+      // Use current form values so any edits made in the dialog are copied
+      const res = await fetch(apiUrl("/api/shifts"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          shiftId: shift.id,
-          targetDate: copyTargetDate,
+          employeeId: employee.id,
+          siteId,
+          date: copyTargetDate,
+          startTime,
+          endTime,
+          unpaidBreakMinutes: Number(breakMinutes) || 0,
+          role: role.trim(),
+          notes: notes.trim() || undefined,
         }),
       })
 
       const data = await res.json()
 
-      if (data.success) {
+      if (data.success && data.shift) {
+        const newShift: Shift = {
+          id: data.shift.id,
+          employeeId: data.shift.employeeId,
+          siteId: data.shift.siteId,
+          date: data.shift.date,
+          startTime: data.shift.startTime,
+          endTime: data.shift.endTime,
+          unpaidBreakMinutes: data.shift.unpaidBreakMinutes,
+          role: data.shift.role,
+          notes: data.shift.notes ?? undefined,
+        }
+
         dispatch({
           type: "ADD_SHIFT",
-          shift: data.shift,
+          shift: newShift,
         })
 
         toast.success(
           `Shift copied to ${formatDateLong(copyTargetDate)}`
         )
 
-        if (onShiftSaved) {
-          onShiftSaved()
-        }
-
         onOpenChange(false)
+
+        if (onShiftSaved) {
+          onShiftSaved(newShift, "add")
+        }
       } else {
         toast.error(data.message || "Failed to copy shift.")
       }
@@ -617,9 +694,11 @@ export function ShiftDialog({
               <Button type="submit" disabled={submitting}>
                 {submitting
                   ? "Saving…"
-                  : isEdit
-                    ? "Save changes"
-                    : "Add shift"}
+                  : hasCopyTarget
+                    ? "Save & copy shift"
+                    : isEdit
+                      ? "Save changes"
+                      : "Add shift"}
               </Button>
             </div>
           </DialogFooter>

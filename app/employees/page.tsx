@@ -49,6 +49,7 @@ import {
   UserMinus,
   Eye,
   EyeOff,
+  Building2,
 } from "lucide-react";
 import { EmployeeFormSheet } from "@/components/employees/employee-form-sheet";
 import type { Employee, EmployeeStatus } from "@/lib/types";
@@ -78,6 +79,7 @@ const STATUS_FILTER_ITEMS = [
 export default function EmployeesPage() {
   const { state, dispatch } = useAppStore();
   const sites = useAccessibleSites();
+  const hasNoLocations = sites.length === 0;
   const siteIds = React.useMemo(() => new Set(sites.map((s) => s.id)), [sites]);
   const siteFilterItems = React.useMemo(() => [
     { value: "all", label: "All locations" },
@@ -325,10 +327,16 @@ export default function EmployeesPage() {
           </div>
 
           <Button
+            disabled={hasNoLocations}
             onClick={() => {
+              if (hasNoLocations) {
+                toast.error("Location Required: Please add a location first before adding employees.");
+                return;
+              }
               setEditingEmployee(undefined);
               setFormOpen(true);
             }}
+            title={hasNoLocations ? "Please add a location first before adding employees" : undefined}
           >
             <UserPlus data-icon="inline-start" />
             Add employee
@@ -336,7 +344,27 @@ export default function EmployeesPage() {
         </div>
 
         <div className="rounded-lg border bg-card overflow-x-auto min-w-0 max-w-full shadow-inner">
-          {employees.length === 0 ? (
+          {hasNoLocations ? (
+            <Empty className="py-16">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Building2 className="text-muted-foreground" />
+                </EmptyMedia>
+                <EmptyTitle>Location Required</EmptyTitle>
+                <EmptyDescription>
+                  No business locations have been added yet. Employees cannot be created or managed until at least one location exists in the system.
+                </EmptyDescription>
+                {(state.role === "business_owner" || state.role === "head_office") && (
+                  <div className="pt-2">
+                    <Button render={<Link href="/sites" />} className="gap-2">
+                      <Building2 className="size-4" />
+                      Add a Location
+                    </Button>
+                  </div>
+                )}
+              </EmptyHeader>
+            </Empty>
+          ) : employees.length === 0 ? (
             <Empty className="py-16">
               <EmptyHeader>
                 <EmptyMedia variant="icon">

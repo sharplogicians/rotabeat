@@ -109,6 +109,15 @@ export async function POST(request: Request) {
       pin,
     } = body
 
+    // Verify that at least one location exists before allowing employee creation
+    const totalLocations = await prisma.location.count()
+    if (totalLocations === 0) {
+      return NextResponse.json(
+        { success: false, message: "Location Required: No locations exist. You must create a location before adding employees." },
+        { status: 400 }
+      )
+    }
+
     // Validate profile image is compulsory
     if (!profileImage || typeof profileImage !== "string" || !profileImage.trim()) {
       return NextResponse.json({ success: false, message: "Profile image is compulsory when adding an employee." }, { status: 400 })

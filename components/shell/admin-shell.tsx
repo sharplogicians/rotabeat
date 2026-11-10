@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/shell/app-header"
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { useAppStore } from "@/lib/store"
 import { canAccessRoute } from "@/lib/auth-guard"
+import { LocationRequiredBanner } from "@/components/shell/location-required-banner"
 import { toast } from "sonner"
 import Link from "next/link"
 
@@ -27,6 +28,9 @@ export function AdminShell({ crumbs, children }: { crumbs: Crumb[]; children: Re
       router.replace("/attendance/clock")
     }
   }, [state.role, pathname, router])
+
+  const hasNoLocations = state.sessionReady && state.sites.length === 0
+  const isSitesPage = pathname === "/sites" || pathname.startsWith("/sites/")
 
   return (
     <SidebarProvider>
@@ -52,7 +56,10 @@ export function AdminShell({ crumbs, children }: { crumbs: Crumb[]; children: Re
             </Breadcrumb>
           }
         />
-        <div className="flex flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 md:gap-6 md:p-6 min-w-0 max-w-full overflow-x-hidden">{children}</div>
+        <div className="flex flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 md:gap-6 md:p-6 min-w-0 max-w-full overflow-x-hidden">
+          {hasNoLocations && !isSitesPage && <LocationRequiredBanner />}
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   )
