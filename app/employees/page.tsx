@@ -117,13 +117,15 @@ export default function EmployeesPage() {
 
   const loadEmployeesFromDb = React.useCallback(async () => {
     try {
-      const res = await fetch(apiUrl("/api/employees"));
+      const res = await fetch(apiUrl(`/api/employees?_t=${Date.now()}`), {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (data.success && Array.isArray(data.employees)) {
         dispatch({ type: "SET_EMPLOYEES", employees: data.employees });
       }
     } catch (e) {
-      console.error("Failed to load employees from DB", e);
+      console.error("Failed to load employees from DB:", e);
     }
   }, [dispatch]);
 

@@ -68,7 +68,9 @@ export default function EmployeeProfilePage() {
     async function load() {
       try {
         // Fetch all employees (cross-site) so the detail page works for any employee
-        const res = await fetch(apiUrl("/api/employees?siteId=all"))
+        const res = await fetch(apiUrl(`/api/employees?siteId=all&_t=${Date.now()}`), {
+          cache: "no-store",
+        })
         const data = await res.json()
         if (data.success && Array.isArray(data.employees)) {
           dispatch({ type: "SET_EMPLOYEES", employees: data.employees })
@@ -103,18 +105,45 @@ export default function EmployeeProfilePage() {
 
   const initials = `${employee.firstName[0] ?? ""}${employee.lastName[0] ?? ""}`.toUpperCase()
 
-  function handleDeactivate() {
+  async function handleDeactivate() {
     if (!employee) return
+    const isBusinessOwner = state.role === "business_owner" || state.role === "head_office"
+    if (employee.jobTitle === "Site Manager" && !isBusinessOwner) {
+      toast.error("Site Managers can only be deactivated by a Business Owner.")
+      return
+    }
+
     const nextStatus = employee.status === "active" ? "inactive" : "active"
-    dispatch({
-      type: "SET_EMPLOYEE_STATUS",
-      employeeId: employee.id,
-      status: nextStatus,
-      actorName: actor.name,
-      reason: nextStatus === "inactive" ? "Deactivated from employee profile" : undefined,
-    })
-    toast.success(nextStatus === "inactive" ? `${employee.firstName} deactivated` : `${employee.firstName} reactivated`)
-    setDeactivateOpen(false)
+    const actionLabel = nextStatus === "inactive" ? "deactivate" : "reactivate"
+
+    try {
+      const res = await fetch(apiUrl("/api/employees"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: employee.id, status: nextStatus }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        dispatch({
+          type: "SET_EMPLOYEE_STATUS",
+          employeeId: employee.id,
+          status: nextStatus,
+          actorName: actor.name,
+          reason: nextStatus === "inactive" ? "Deactivated from employee profile" : undefined,
+        })
+        toast.success(
+          nextStatus === "inactive"
+            ? `${employee.firstName} deactivated`
+            : `${employee.firstName} reactivated`
+        )
+      } else {
+        toast.error(data.message || `Failed to ${actionLabel} employee`)
+      }
+    } catch {
+      toast.error("Failed to update employee status")
+    } finally {
+      setDeactivateOpen(false)
+    }
   }
 
   async function handleResetPin() {
