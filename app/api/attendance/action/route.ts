@@ -9,79 +9,250 @@ import {
   getNextStateForAction,
   type AttendanceActionType,
 } from "@/lib/attendance"
+import { verifyFaceMatch } from "@/lib/face-recognition"
 import { logger } from "@/lib/logger"
 
 export async function POST(request: Request) {
+  const serverDateObj = new Date()
+  const serverTimestamp = serverDateObj.toISOString()
+  const dateIso = serverDateObj.toLocaleDateString("en-CA") // YYYY-MM-DD in local system time
+
   try {
     const body = await request.json()
-    const { employeeId, action, siteId, photo, source, faceMatchScore, faceVerified } = body
-    const eventSource = source || "web"
+    const {
+      employeeId,
+      username,
+      employeeNumber,
+      action,
+      siteId,
+      photo,
+      source,
+      clientType,
+      faceMatchScore,
+      faceVerified,
+    } = body
 
-    if (!employeeId) {
+    const eventSource = (source || clientType || "web").toLowerCase()
+    const isAppRequest =
+      eventSource === "app" ||
+      eventSource === "mobile" ||
+      clientType === "app" ||
+      clientType === "mobile" ||
+      Boolean(request.headers.get("x-client-type")?.includes("app"))
+
+    // Accept employeeId, username, or employeeNumber
+    const rawIdentifier = (employeeId || username || employeeNumber || "").trim()
+
+    if (!rawIdentifier) {
       return NextResponse.json(
-        { success: false, message: "Employee ID is required." },
+        {
+          success: false,
+          timestamp: serverTimestamp,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Employee ID or username is required.",
+          },
+          message: "Employee ID is required.",
+        },
         { status: 400 }
       )
     }
 
     if (!action || !["clock_in", "break_start", "break_end", "clock_out"].includes(action)) {
       return NextResponse.json(
-        { success: false, message: "Invalid attendance action provided." },
+        {
+          success: false,
+          timestamp: serverTimestamp,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid attendance action provided. Must be clock_in, break_start, break_end, or clock_out.",
+          },
+          message: "Invalid attendance action provided.",
+        },
         { status: 400 }
       )
     }
 
     const actionType = action as AttendanceActionType
 
-    // Fetch employee from database
-    const employee = await prisma.employee.findUnique({
-      where: { id: employeeId },
+    // Fetch employee from database by id, employeeNumber, or email
+    const cleanId = rawIdentifier.toLowerCase()
+    const employee = await prisma.employee.findFirst({
+      where: {
+        OR: [
+          { id: rawIdentifier },
+          { employeeNumber: rawIdentifier },
+          { employeeNumber: rawIdentifier.toUpperCase() },
+          { email: cleanId },
+        ],
+      },
       include: { primarySite: true },
     })
 
     if (!employee) {
       return NextResponse.json(
-        { success: false, message: "Employee not found." },
+        {
+          success: false,
+          timestamp: serverTimestamp,
+          error: {
+            code: "EMPLOYEE_NOT_FOUND",
+            message: "Employee not found.",
+          },
+          message: "Employee not found.",
+        },
         { status: 404 }
       )
     }
 
     if (employee.status !== "active") {
       return NextResponse.json(
-        { success: false, message: `Employee status is ${employee.status}. Only active employees can record attendance.` },
+        {
+          success: false,
+          timestamp: serverTimestamp,
+          error: {
+            code: "ACCOUNT_INACTIVE",
+            message: `Employee status is ${employee.status}. Only active employees can record attendance.`,
+          },
+          message: `Employee status is ${employee.status}. Only active employees can record attendance.`,
+        },
         { status: 400 }
       )
     }
 
-    // Strict Block: Require registered profile image and verified face match
-    if (actionType === "clock_in" || actionType === "clock_out") {
-      if (!employee.profileImage && !employee.faceEmbedding) {
+    // ─────────────────────────────────────────────────────────────────────────────
+    // BIOMETRIC FACE VERIFICATION (Enforced for ALL 4 actions: clock_in, break_start, break_end, clock_out)
+    // ─────────────────────────────────────────────────────────────────────────────
+    const liveEmbedding =
+      body.liveEmbedding || body.liveFaceEmbedding || body.faceEmbedding || null
+
+    let finalFaceVerified = Boolean(faceVerified)
+    let finalFaceMatchScore: number | null =
+      typeof faceMatchScore === "number" ? faceMatchScore : null
+    let finalFaceDistance: number | null = null
+    let finalFaceSimilarity: number | null = null
+    let biometricVerifiedBy = "none"
+
+    // Parse registered embedding from database
+    let registeredVector: number[] | null = null
+    if (employee.faceEmbedding) {
+      try {
+        registeredVector =
+          typeof employee.faceEmbedding === "string"
+            ? JSON.parse(employee.faceEmbedding)
+            : employee.faceEmbedding
+      } catch {}
+    }
+
+    // Parse live embedding from mobile app request
+    let liveVector: number[] | null = null
+    if (liveEmbedding) {
+      try {
+        liveVector =
+          typeof liveEmbedding === "string" ? JSON.parse(liveEmbedding) : liveEmbedding
+      } catch {}
+    }
+
+    // 1. If live vector is provided by Mobile App -> Compare on Server
+    if (Array.isArray(liveVector) && liveVector.length > 0) {
+      if (!registeredVector || !Array.isArray(registeredVector) || registeredVector.length === 0) {
         return NextResponse.json(
           {
             success: false,
-            message: "No registered photo found. Please have your manager upload a profile photo before clocking in.",
+            timestamp: serverTimestamp,
+            error: {
+              code: "NO_REGISTERED_FACE",
+              message:
+                "No registered face embedding found in database. Please ask your manager to register your photo before performing attendance actions.",
+            },
+            message: "No registered face profile found.",
           },
           { status: 400 }
         )
       }
 
-      if (eventSource === "web") {
+      // Perform Euclidean Distance & Cosine Similarity matching
+      const matchResult = verifyFaceMatch(liveVector, registeredVector)
+      finalFaceDistance = Number(matchResult.distance.toFixed(4))
+      finalFaceSimilarity = Number(matchResult.similarity.toFixed(4))
+      finalFaceMatchScore = matchResult.score
+      finalFaceVerified = matchResult.matched
+      biometricVerifiedBy = "server_vector_comparison"
+
+      if (!matchResult.matched) {
+        return NextResponse.json(
+          {
+            success: false,
+            timestamp: serverTimestamp,
+            error: {
+              code: "BIOMETRIC_MISMATCH",
+              message: `Biometric face verification failed. Match confidence was ${matchResult.score}% (minimum 70% required). Live camera face does not match registered employee.`,
+            },
+            biometric: {
+              verified: false,
+              matchScore: matchResult.score,
+              distance: finalFaceDistance,
+              similarity: finalFaceSimilarity,
+              threshold: 0.48,
+            },
+            message: `Face verification failed (${matchResult.score}% match confidence).`,
+          },
+          { status: 400 }
+        )
+      }
+    } else {
+      // 2. Strict Check for all actions without live embedding vector
+      if (!employee.profileImage && !employee.faceEmbedding) {
+        return NextResponse.json(
+          {
+            success: false,
+            timestamp: serverTimestamp,
+            error: {
+              code: "NO_REGISTERED_FACE",
+              message:
+                "No registered photo found. Please have your manager upload a profile photo before performing attendance actions.",
+            },
+            message:
+              "No registered photo found. Please have your manager upload a profile photo before performing attendance actions.",
+          },
+          { status: 400 }
+        )
+      }
+
+      if (isAppRequest) {
+        return NextResponse.json(
+          {
+            success: false,
+            timestamp: serverTimestamp,
+            error: {
+              code: "BIOMETRIC_REQUIRED",
+              message: `Live camera face embedding is required for ${getAttendanceActionLabel(actionType).toLowerCase()}.`,
+            },
+            message: `Live camera face embedding is required for ${getAttendanceActionLabel(actionType).toLowerCase()}.`,
+          },
+          { status: 400 }
+        )
+      }
+
+      if (eventSource === "web" && (actionType === "clock_in" || actionType === "clock_out")) {
         if (!faceVerified || (typeof faceMatchScore === "number" && faceMatchScore < 65)) {
           return NextResponse.json(
             {
               success: false,
-              message: "Biometric face verification failed. The live camera face does not match the employee's registered photo. Clocking in on another person's behalf is strictly prohibited.",
+              timestamp: serverTimestamp,
+              error: {
+                code: "BIOMETRIC_MISMATCH",
+                message:
+                  "Biometric face verification failed. The live camera face does not match the employee's registered photo. Clocking in on another person's behalf is strictly prohibited.",
+              },
+              message:
+                "Biometric face verification failed. The live camera face does not match the employee's registered photo. Clocking in on another person's behalf is strictly prohibited.",
             },
             { status: 400 }
           )
         }
+        biometricVerifiedBy = "client_biometrics"
       }
     }
-
-    // Official server timestamp - synced with local calendar date
-    const serverDateObj = new Date()
-    const serverTimestamp = serverDateObj.toISOString()
-    const dateIso = serverDateObj.toLocaleDateString("en-CA") // YYYY-MM-DD in local system time
 
     const targetSiteId = siteId || employee.primarySiteId
 
@@ -103,7 +274,15 @@ export async function POST(request: Request) {
     const validation = validateAttendanceAction(currentStatus, actionType, existingEvents)
     if (!validation.valid) {
       return NextResponse.json(
-        { success: false, message: validation.error || "Action not allowed." },
+        {
+          success: false,
+          timestamp: serverTimestamp,
+          error: {
+            code: "INVALID_ACTION_SEQUENCE",
+            message: validation.error || "Action not allowed.",
+          },
+          message: validation.error || "Action not allowed.",
+        },
         { status: 400 }
       )
     }
@@ -124,7 +303,8 @@ export async function POST(request: Request) {
 
         const isMarkedAbsent =
           attendanceRecord &&
-          (attendanceRecord.exceptionsJson?.includes("absent") || attendanceRecord.source === "auto_absent")
+          (attendanceRecord.exceptionsJson?.includes("absent") ||
+            attendanceRecord.source === "auto_absent")
 
         if (isMarkedAbsent || nowMins > shiftStartMins + 5) {
           if (!attendanceRecord) {
@@ -148,7 +328,6 @@ export async function POST(request: Request) {
             })
           }
 
-          // Trigger real-time notification to Business Owner & Site Manager
           const existingNoti = await prisma.appNotification.findFirst({
             where: {
               employeeId: employee.id,
@@ -161,7 +340,7 @@ export async function POST(request: Request) {
           if (!existingNoti) {
             await prisma.appNotification.create({
               data: {
-                recipientRole: "management", // Broadcasts to both Business Owner and Site Manager
+                recipientRole: "management",
                 employeeId: employee.id,
                 employeeName: `${employee.firstName} ${employee.lastName}`,
                 siteId: targetSiteId,
@@ -188,6 +367,11 @@ export async function POST(request: Request) {
             {
               success: false,
               isAbsent: true,
+              timestamp: serverTimestamp,
+              error: {
+                code: "MARKED_ABSENT",
+                message: `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${shift.startTime}). Please contact your site manager.`,
+              },
               message: `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${shift.startTime}). Please contact your site manager.`,
             },
             { status: 400 }
@@ -199,7 +383,6 @@ export async function POST(request: Request) {
     // Upsert / Create record & clock event
     let createdEvent: any
     if (!attendanceRecord) {
-      // Find shift for today if scheduled
       const shift = await prisma.shift.findFirst({
         where: {
           employeeId: employee.id,
@@ -244,15 +427,16 @@ export async function POST(request: Request) {
     if (createdEvent?.id) {
       try {
         await prisma.$executeRawUnsafe(
-          'UPDATE `ClockEvent` SET `photo` = COALESCE(?, `photo`), `faceMatchScore` = ?, `faceVerified` = ? WHERE `id` = ?',
+          "UPDATE `ClockEvent` SET `photo` = COALESCE(?, `photo`), `faceMatchScore` = ?, `faceVerified` = ? WHERE `id` = ?",
           photo || null,
-          typeof faceMatchScore === "number" ? faceMatchScore : null,
-          faceVerified ? 1 : 0,
+          typeof finalFaceMatchScore === "number" ? finalFaceMatchScore : null,
+          finalFaceVerified ? 1 : 0,
           createdEvent.id
         )
         if (photo) createdEvent.photo = photo
-        if (typeof faceMatchScore === "number") createdEvent.faceMatchScore = faceMatchScore
-        createdEvent.faceVerified = Boolean(faceVerified)
+        if (typeof finalFaceMatchScore === "number")
+          createdEvent.faceMatchScore = finalFaceMatchScore
+        createdEvent.faceVerified = Boolean(finalFaceVerified)
       } catch (photoErr) {
         logger.error("Failed to update photo/biometrics on ClockEvent", photoErr)
       }
@@ -293,7 +477,6 @@ export async function POST(request: Request) {
     const notifications: any[] = []
 
     if (actionType === "clock_in") {
-      // 1. Notification to Business Owner and Site Manager with location and exact detail
       notifications.push({
         id: `noti-${Date.now()}-1`,
         recipientRole: "management",
@@ -309,7 +492,6 @@ export async function POST(request: Request) {
         isWarning: false,
       })
 
-      // 2. Notification to Employee on starting shift
       notifications.push({
         id: `noti-${Date.now()}-2`,
         recipientRole: "employee",
@@ -326,7 +508,6 @@ export async function POST(request: Request) {
         isWarning: false,
       })
 
-      // 3. Check if late joined for shift (Notification to Owner & Manager)
       if (shift && shift.startTime) {
         const [schedHours, schedMins] = shift.startTime.split(":").map(Number)
         const clockHours = serverDateObj.getHours()
@@ -358,7 +539,6 @@ export async function POST(request: Request) {
         }
       }
     } else if (actionType === "break_start") {
-      // Notification to Owner & Manager when started break
       notifications.push({
         id: `noti-${Date.now()}-1`,
         recipientRole: "management",
@@ -374,7 +554,6 @@ export async function POST(request: Request) {
         isWarning: false,
       })
     } else if (actionType === "break_end") {
-      // Notification to Owner & Manager when ended break
       notifications.push({
         id: `noti-${Date.now()}-1`,
         recipientRole: "management",
@@ -390,7 +569,6 @@ export async function POST(request: Request) {
         isWarning: false,
       })
 
-      // Check if employee has taken extra time of break (Notification to Owner & Manager)
       const breakStartEvent = existingEvents
         .slice()
         .reverse()
@@ -442,7 +620,6 @@ export async function POST(request: Request) {
       })
     }
 
-    // Save notifications to DB so all connected Business Owners & Site Managers receive them
     if (notifications.length > 0) {
       try {
         await prisma.appNotification.createMany({
@@ -467,11 +644,132 @@ export async function POST(request: Request) {
       }
     }
 
+    const biometricPayload = {
+      verified: Boolean(finalFaceVerified),
+      matchScore: finalFaceMatchScore,
+      distance: finalFaceDistance,
+      similarity: finalFaceSimilarity,
+      verifiedBy: biometricVerifiedBy,
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // MOBILE APP RESPONSE: Return exactly what the mobile client requires
+    // ─────────────────────────────────────────────────────────────────────────────
+    if (isAppRequest) {
+      return NextResponse.json({
+        success: true,
+        timestamp: serverTimestamp,
+        message: `${getSuccessConfirmationTitle(actionType)} Successfully!`,
+        biometric: biometricPayload,
+      })
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // WEB KIOSK / DASHBOARD RESPONSE: Full payload with data and notifications
+    // ─────────────────────────────────────────────────────────────────────────────
+    const updatedRecord = await prisma.attendanceRecord.findUnique({
+      where: { id: attendanceRecord.id },
+      include: {
+        events: {
+          orderBy: { timestamp: "asc" },
+        },
+      },
+    })
+    const allEvents = updatedRecord?.events || []
+
+    function formatEventTime(isoString: string): string {
+      try {
+        const d = new Date(isoString)
+        return d.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        })
+      } catch {
+        return isoString
+      }
+    }
+
+    const clockInEvt = allEvents.find((e) => e.type === "clock_in")
+    const breakStartEvt = allEvents
+      .slice()
+      .reverse()
+      .find((e) => e.type === "break_start")
+    const breakEndEvt = allEvents
+      .slice()
+      .reverse()
+      .find((e) => e.type === "break_end")
+    const clockOutEvt = allEvents.find((e) => e.type === "clock_out")
+
+    const history = {
+      clock_in: clockInEvt ? formatEventTime(clockInEvt.timestamp) : null,
+      break_start: breakStartEvt ? formatEventTime(breakStartEvt.timestamp) : null,
+      break_end: breakEndEvt ? formatEventTime(breakEndEvt.timestamp) : null,
+      clock_out: clockOutEvt ? formatEventTime(clockOutEvt.timestamp) : null,
+      events: allEvents.map((e) => ({
+        id: e.id,
+        type: e.type,
+        time: formatEventTime(e.timestamp),
+        timestamp: e.timestamp,
+        photo: e.photo || null,
+      })),
+    }
+
+    let shiftStatus = "NOT_CHECKED_IN"
+    let allowedActions: string[] = ["clock_in"]
+
+    switch (nextStatus) {
+      case "working":
+        shiftStatus = "CLOCKED_IN"
+        allowedActions = ["break_start", "clock_out"]
+        break
+      case "on_break":
+        shiftStatus = "ON_BREAK"
+        allowedActions = ["break_end"]
+        break
+      case "clocked_out":
+        shiftStatus = "CLOCKED_OUT"
+        allowedActions = []
+        break
+      default:
+        shiftStatus = "NOT_CHECKED_IN"
+        allowedActions = ["clock_in"]
+    }
+
     return NextResponse.json({
       success: true,
-      message: getSuccessConfirmationTitle(actionType),
+      timestamp: serverTimestamp,
+      message: `${getSuccessConfirmationTitle(actionType)} Successfully!`,
+      biometric: biometricPayload,
       notifications,
       data: {
+        employee: {
+          employeeId: employee.id,
+          employeeNumber: employee.employeeNumber,
+          name: employeeName,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          email: employee.email,
+          role: "employee",
+          jobTitle: employee.jobTitle,
+          locationId: targetSiteId,
+          profileImage: employee.profileImage || null,
+        },
+        todayShift: shift
+          ? {
+              id: shift.id,
+              date: shift.date,
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+              unpaidBreakMinutes: shift.unpaidBreakMinutes ?? 0,
+              role: shift.role || employee.jobTitle || "Staff",
+              status: shiftStatus,
+              allowed_actions: allowedActions,
+              late_allowed_minutes: 5,
+            }
+          : null,
+        biometric: biometricPayload,
+        history,
         eventId: createdEvent.id,
         employeeId: employee.id,
         employeeName,
@@ -488,7 +786,15 @@ export async function POST(request: Request) {
   } catch (error: any) {
     logger.error("POST /api/attendance/action", error)
     return NextResponse.json(
-      { success: false, message: "We couldn't process your request. Please try again." },
+      {
+        success: false,
+        timestamp: serverTimestamp,
+        error: {
+          code: "SERVER_ERROR",
+          message: error?.message || "We couldn't process your request. Please try again.",
+        },
+        message: "We couldn't process your request. Please try again.",
+      },
       { status: 500 }
     )
   }

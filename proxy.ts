@@ -7,6 +7,9 @@ import { apiUrl } from "@/lib/api"
 const PUBLIC_ROUTES = [
   "/api/auth/login",
   "/api/auth/reset-password",
+  "/api/audit",
+  "/api/attendance/action",
+  "/api/attendance/status",
   "/login",
   "/kiosk",
   "/_next",
