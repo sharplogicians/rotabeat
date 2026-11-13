@@ -466,12 +466,24 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
     userName: `${employee.firstName} ${employee.lastName}`,
   })
 
+  // Parse face embedding vector if available
+  let parsedFaceEmbedding: number[] | null = null
+  if (employee.faceEmbedding) {
+    try {
+      parsedFaceEmbedding =
+        typeof employee.faceEmbedding === "string"
+          ? JSON.parse(employee.faceEmbedding)
+          : employee.faceEmbedding
+    } catch {}
+  }
+
   const response = NextResponse.json({
     success: true,
     timestamp,
     data: {
       employee: {
         employeeId: employee.id,
+        employeeNumber: employee.employeeNumber,
         name: `${employee.firstName} ${employee.lastName}`,
         firstName: employee.firstName,
         lastName: employee.lastName,
@@ -480,6 +492,7 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
         jobTitle: employee.jobTitle,
         locationId: employee.primarySiteId,
         profileImage: employee.profileImage ?? null,
+        faceEmbedding: parsedFaceEmbedding,
       },
       todayShift: {
         id: todayShift.id,
