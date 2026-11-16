@@ -57,6 +57,7 @@ export function LiveClockCameraModal({
   isSubmitting = false,
 }: LiveClockCameraModalProps) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null)
+  const streamRef = React.useRef<MediaStream | null>(null)
   const [stream, setStream] = React.useState<MediaStream | null>(null)
   const [cameraError, setCameraError] = React.useState<string | null>(null)
   const [capturedPhoto, setCapturedPhoto] = React.useState<string | null>(null)
@@ -157,6 +158,7 @@ export function LiveClockCameraModal({
         audio: false,
       })
 
+      streamRef.current = mediaStream
       setStream(mediaStream)
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
@@ -181,15 +183,33 @@ export function LiveClockCameraModal({
       }
       setFaceStatus("idle")
     }
-  }, [])
+  }, [hasRegisteredPhoto])
 
-  // Stop stream
+  // Stop stream & release hardware camera resources
   const stopCamera = React.useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
-      setStream(null)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+          track.enabled = false
+        } catch {
+          // ignore error on already stopped track
+        }
+      })
+      streamRef.current = null
     }
-  }, [stream])
+
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause()
+        videoRef.current.srcObject = null
+      } catch {
+        // ignore
+      }
+    }
+
+    setStream(null)
+  }, [])
 
   React.useEffect(() => {
     if (open) {
@@ -205,7 +225,7 @@ export function LiveClockCameraModal({
     return () => {
       stopCamera()
     }
-  }, [open])
+  }, [open, startCamera, stopCamera])
 
   // Attach stream to video ref if available
   React.useEffect(() => {
@@ -284,6 +304,9 @@ export function LiveClockCameraModal({
               const snapshot = takeSnapshot()
               setCapturedPhoto(snapshot)
 
+              // Immediately stop camera hardware tracks to turn off the green sensor light
+              stopCamera()
+
               setTimeout(() => {
                 setIsFlashing(false)
               }, 180)
@@ -349,6 +372,9 @@ export function LiveClockCameraModal({
           const snapshot = takeSnapshot()
           setCapturedPhoto(snapshot)
 
+          // Immediately stop camera hardware tracks to turn off the green sensor light
+          stopCamera()
+
           setTimeout(() => {
             setIsFlashing(false)
           }, 180)
@@ -376,9 +402,7 @@ export function LiveClockCameraModal({
     setCapturedPhoto(null)
     setFaceStatus("searching")
     setStatusMessage("Position your face inside the circle...")
-    if (!stream) {
-      startCamera()
-    }
+    startCamera()
   }
 
   return (
@@ -443,7 +467,7 @@ export function LiveClockCameraModal({
                 No registered photo found. Please have your manager upload a profile photo before clocking in.
               </p>
             </div>
-          ) : capturedPhoto && faceStatus !== "matched" && faceStatus !== "submitting" ? (
+          ) : capturedPhoto ? (
             <div className="relative w-full h-full">
               <img
                 src={capturedPhoto}
@@ -453,10 +477,10 @@ export function LiveClockCameraModal({
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white text-xs">
                 <span className="flex items-center gap-1.5 font-medium text-emerald-400">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Live Image Captured
+                  {faceStatus === "matched" || faceStatus === "submitting" ? "Face Verified ✓" : "Live Image Captured"}
                 </span>
                 <span className="text-[11px] text-white/70">
-                  {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  {matchScore ? `${matchScore}% Match` : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
               </div>
             </div>
