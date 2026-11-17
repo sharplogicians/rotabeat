@@ -45,60 +45,62 @@ export default function AttendancePage() {
 
   const activeSiteId = site?.id || ""
 
-  // Sync DB employees, shifts, and attendance records on mount
-  React.useEffect(() => {
-    async function loadDbData() {
-      try {
-        const empRes = await fetch(apiUrl("/api/employees"))
-        if (empRes.ok) {
-          const empData = await empRes.json()
-          if (empData.success && Array.isArray(empData.employees) && empData.employees.length > 0) {
-            dispatch({ type: "SET_EMPLOYEES", employees: empData.employees })
-          }
+  // Sync DB employees, shifts, and attendance records
+  const loadDbData = React.useCallback(async () => {
+    try {
+      const empRes = await fetch(apiUrl("/api/employees"))
+      if (empRes.ok) {
+        const empData = await empRes.json()
+        if (empData.success && Array.isArray(empData.employees) && empData.employees.length > 0) {
+          dispatch({ type: "SET_EMPLOYEES", employees: empData.employees })
         }
-
-        const weekEnd = addDays(state.currentWeekStart, 6)
-        const shiftRes = await fetch(apiUrl(`/api/shifts?siteId=${activeSiteId}&weekStart=${state.currentWeekStart}&endDate=${weekEnd}`))
-        if (shiftRes.ok) {
-          const shiftData = await shiftRes.json()
-          if (shiftData.success && Array.isArray(shiftData.shifts)) {
-            shiftData.shifts.forEach((s: any) => {
-              dispatch({ type: "ADD_SHIFT", shift: s })
-            })
-          }
-        }
-
-        const attRes = await fetch(apiUrl(`/api/attendance?siteId=${activeSiteId}`))
-        if (attRes.ok) {
-          const attData = await attRes.json()
-          if (attData.success && Array.isArray(attData.records)) {
-            // Update attendance in state
-            attData.records.forEach((rec: any) => {
-              dispatch({
-                type: "CORRECT_ATTENDANCE",
-                attendanceId: rec.id,
-                employeeId: rec.employeeId,
-                siteId: rec.siteId,
-                date: rec.date,
-                shiftId: rec.shiftId,
-                events: rec.events,
-                exceptions: rec.exceptions,
-                reason: rec.correctionReason || "",
-                actorName: rec.correctedBy || "System",
-              })
-            })
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load attendance/employee/shift data from DB:", err)
       }
-    }
-    if (activeSiteId) {
-      loadDbData()
+
+      const weekEnd = addDays(state.currentWeekStart, 6)
+      const shiftRes = await fetch(apiUrl(`/api/shifts?siteId=${activeSiteId}&weekStart=${state.currentWeekStart}&endDate=${weekEnd}`))
+      if (shiftRes.ok) {
+        const shiftData = await shiftRes.json()
+        if (shiftData.success && Array.isArray(shiftData.shifts)) {
+          shiftData.shifts.forEach((s: any) => {
+            dispatch({ type: "ADD_SHIFT", shift: s })
+          })
+        }
+      }
+
+      const attRes = await fetch(apiUrl(`/api/attendance?siteId=${activeSiteId}`))
+      if (attRes.ok) {
+        const attData = await attRes.json()
+        if (attData.success && Array.isArray(attData.records)) {
+          // Update attendance in state
+          attData.records.forEach((rec: any) => {
+            dispatch({
+              type: "CORRECT_ATTENDANCE",
+              attendanceId: rec.id,
+              employeeId: rec.employeeId,
+              siteId: rec.siteId,
+              date: rec.date,
+              shiftId: rec.shiftId,
+              events: rec.events,
+              exceptions: rec.exceptions,
+              reason: rec.correctionReason || "",
+              actorName: rec.correctedBy || "System",
+            })
+          })
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load attendance/employee/shift data from DB:", err)
     }
   }, [dispatch, activeSiteId, state.currentWeekStart])
 
-  const days = weekDays(state.currentWeekStart).filter((d) => d <= TODAY_ISO)
+  React.useEffect(() => {
+    if (activeSiteId) {
+      loadDbData()
+    }
+  }, [activeSiteId, loadDbData])
+
+  // Include all days of the current week (Monday through Sunday)
+  const days = weekDays(state.currentWeekStart)
 
   const rows: Row[] = React.useMemo(() => {
     if (!activeSiteId) return []
@@ -112,23 +114,32 @@ export default function AttendancePage() {
       for (const shift of shiftsForDay) {
         const employee = state.employees.find((e) => e.id === shift.employeeId)
         if (!employee) continue
-        if (employee.primarySiteId && employee.primarySiteId !== activeSiteId) continue
         processedEmpIds.add(employee.id)
         const record = state.attendance.find((a) => a.shiftId === shift.id || (a.employeeId === employee.id && a.date === date))
         out.push({ key: `shift-${shift.id}-${date}`, employee, date, shift, record })
       }
 
-      // 2. Unplanned attendance records for this date & site (only for employees without a shift)
+      // 2. Unplanned or manual attendance records for this date & site (for employees without a shift)
       const unplanned = state.attendance.filter(
         (a) => a.siteId === activeSiteId && a.date === date && !processedEmpIds.has(a.employeeId)
       )
       for (const record of unplanned) {
         const employee = state.employees.find((e) => e.id === record.employeeId)
         if (!employee) continue
-        if (employee.primarySiteId && employee.primarySiteId !== activeSiteId) continue
         processedEmpIds.add(employee.id)
         out.push({ key: `record-${record.id}-${date}`, employee, date, record })
       }
+    }
+
+    // 3. Ensure any attendance record belonging to the current week is never missed
+    const weekDatesSet = new Set(days)
+    const extraAttendance = state.attendance.filter(
+      (a) => a.siteId === activeSiteId && weekDatesSet.has(a.date) && !out.some((r) => r.record?.id === a.id)
+    )
+    for (const record of extraAttendance) {
+      const employee = state.employees.find((e) => e.id === record.employeeId)
+      if (!employee) continue
+      out.push({ key: `record-extra-${record.id}`, employee, date: record.date, record })
     }
 
     return out.sort((a, b) => {
@@ -523,6 +534,7 @@ export default function AttendancePage() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         siteId={activeSiteId}
+        onSuccess={loadDbData}
         onOpenCorrection={(rec, emp, d, s) => {
           setDrawerRow({
             key: `correction-${rec.id}`,

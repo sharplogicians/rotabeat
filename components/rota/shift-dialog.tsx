@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Copy, Trash2, Clock, AlertTriangle, CalendarX } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 import type { Employee, Shift } from "@/lib/types"
-import { formatDateLong, weekDays, dayOfWeekShort } from "@/lib/date-utils"
+import { formatDateLong, weekDays, dayOfWeekShort, TODAY_ISO, formatTime12 } from "@/lib/date-utils"
 import { shiftSpanMinutes, minutesToHours } from "@/lib/calc"
 
 const SHIFT_ROLES = [
@@ -97,8 +97,34 @@ export function ShiftDialog({
   React.useEffect(() => {
     if (open) {
       setRole(shift?.role ?? employee?.jobTitle ?? SHIFT_ROLES[0])
-      setStartTime(shift?.startTime ?? "09:00")
-      setEndTime(shift?.endTime ?? "17:00")
+
+      let initialStart = shift?.startTime ?? "09:00"
+      let initialEnd = shift?.endTime ?? "17:00"
+
+      // If scheduling a new shift for today, default to the next upcoming time slot
+      if (!shift && date === TODAY_ISO) {
+        const now = new Date()
+        const nowMinutes = now.getHours() * 60 + now.getMinutes()
+        const [defaultH, defaultM] = initialStart.split(":").map(Number)
+        const defaultMinutes = defaultH * 60 + defaultM
+
+        if (defaultMinutes < nowMinutes) {
+          // Round up to next 15 minutes
+          const nextQuarter = Math.ceil((nowMinutes + 5) / 15) * 15
+          const startH = Math.floor(nextQuarter / 60) % 24
+          const startM = nextQuarter % 60
+          initialStart = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`
+
+          // End time 8 hours later
+          const endQuarter = (nextQuarter + 8 * 60) % (24 * 60)
+          const endH = Math.floor(endQuarter / 60)
+          const endM = endQuarter % 60
+          initialEnd = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`
+        }
+      }
+
+      setStartTime(initialStart)
+      setEndTime(initialEnd)
       setBreakMinutes(String(shift?.unpaidBreakMinutes ?? 30))
       setNotes(shift?.notes ?? "")
       setShowCopySection(false)
@@ -108,6 +134,15 @@ export function ShiftDialog({
       setErrors({})
     }
   }, [open, shift, employee, date, weekDateList])
+
+  // Minimum allowed start time when scheduling for today
+  const minStartTime = React.useMemo(() => {
+    if (date === TODAY_ISO && !isEdit) {
+      const now = new Date()
+      return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    }
+    return undefined
+  }, [date, isEdit])
 
   // Calculated hours
   const calculatedHours = React.useMemo(() => {
@@ -144,6 +179,25 @@ export function ShiftDialog({
 
     if (!endTime) {
       next.endTime = "End time is required."
+    }
+
+    // Upcoming time validation for new shifts
+    if (!isEdit && date) {
+      if (date < TODAY_ISO) {
+        next.startTime = `Cannot schedule a new shift for a past date (${formatDateLong(date)}). Please select today or a future date.`
+      } else if (date === TODAY_ISO && startTime) {
+        const now = new Date()
+        const [sH, sM] = startTime.split(":").map(Number)
+        const shiftStartMins = (sH || 0) * 60 + (sM || 0)
+        const nowMins = now.getHours() * 60 + now.getMinutes()
+
+        if (shiftStartMins < nowMins) {
+          const nowFormatted = formatTime12(
+            `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+          )
+          next.startTime = `Start time (${formatTime12(startTime)}) has already passed today. Current time is ${nowFormatted}. Please choose an upcoming time.`
+        }
+      }
     }
 
     if (bMins < 0) {
@@ -531,6 +585,7 @@ export function ShiftDialog({
                 <Input
                   id="startTime"
                   type="time"
+                  min={minStartTime}
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
                   aria-invalid={Boolean(errors.startTime)}

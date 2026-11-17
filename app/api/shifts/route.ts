@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { shiftSpanMinutes } from "@/lib/calc"
-import { getWeekStart } from "@/lib/date-utils"
+import { getWeekStart, isoDate } from "@/lib/date-utils"
 import { getApiUser, enforceSiteAccess } from "@/lib/auth-guard"
 import { logAuditEvent } from "@/lib/audit"
 
@@ -86,6 +86,37 @@ export async function POST(request: Request) {
     }
     if (!endTime) {
       return NextResponse.json({ success: false, message: "Please enter an end time." }, { status: 400 })
+    }
+
+    // Validate that new shifts are scheduled for upcoming times
+    const serverNow = new Date()
+    const todayIso = isoDate(serverNow)
+
+    if (date < todayIso) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Cannot schedule a shift for a past date (${date}). Please select today or a future date.`,
+        },
+        { status: 400 }
+      )
+    }
+
+    if (date === todayIso) {
+      const [sH, sM] = startTime.split(":").map(Number)
+      const shiftStartMins = (sH || 0) * 60 + (sM || 0)
+      const currentMins = serverNow.getHours() * 60 + serverNow.getMinutes()
+
+      if (shiftStartMins < currentMins) {
+        const curTimeFormatted = `${String(serverNow.getHours()).padStart(2, "0")}:${String(serverNow.getMinutes()).padStart(2, "0")}`
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Start time (${startTime}) has already passed today (current time: ${curTimeFormatted}). Shifts scheduled for today must have an upcoming start time.`,
+          },
+          { status: 400 }
+        )
+      }
     }
 
     // Site permission check

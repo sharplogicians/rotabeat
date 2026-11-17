@@ -49,6 +49,7 @@ interface AddAttendanceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   siteId: string
+  onSuccess?: () => void
   onOpenCorrection?: (
     record: AttendanceRecord,
     employee: Employee,
@@ -61,6 +62,7 @@ export function AddAttendanceDialog({
   open,
   onOpenChange,
   siteId,
+  onSuccess,
   onOpenCorrection,
 }: AddAttendanceDialogProps) {
   const { state, dispatch } = useAppStore()
@@ -78,16 +80,39 @@ export function AddAttendanceDialog({
   const [duplicateModalOpen, setDuplicateModalOpen] = React.useState(false)
 
   const activeEmployees = React.useMemo(() => {
+    // Include employees assigned to this site OR having shifts at this site
+    const siteShiftEmployeeIds = new Set(
+      state.shifts.filter((s) => !siteId || s.siteId === siteId).map((s) => s.employeeId)
+    )
     return state.employees.filter(
       (e) =>
-        (e.primarySiteId === siteId || !e.primarySiteId) &&
-        e.status === "active"
+        e.status === "active" &&
+        (!siteId || e.primarySiteId === siteId || !e.primarySiteId || siteShiftEmployeeIds.has(e.id))
     )
-  }, [state.employees, siteId])
+  }, [state.employees, state.shifts, siteId])
 
   const selectedEmployee = React.useMemo(() => {
-    return activeEmployees.find((e) => e.id === employeeId) || null
-  }, [activeEmployees, employeeId])
+    return (
+      activeEmployees.find((e) => e.id === employeeId) ||
+      state.employees.find((e) => e.id === employeeId) ||
+      null
+    )
+  }, [activeEmployees, state.employees, employeeId])
+
+  const selectedEmployeeLabel = React.useMemo(() => {
+    if (!selectedEmployee) return "Select employee"
+    const fullName = `${selectedEmployee.firstName} ${selectedEmployee.lastName}`.trim()
+    const job = selectedEmployee.jobTitle ? ` (${selectedEmployee.jobTitle})` : ""
+    const empNum = selectedEmployee.employeeNumber ? ` · ${selectedEmployee.employeeNumber}` : ""
+    return `${fullName}${job}${empNum}`
+  }, [selectedEmployee])
+
+  const employeeItems = React.useMemo(() => {
+    return activeEmployees.map((emp) => ({
+      value: emp.id,
+      label: `${emp.firstName} ${emp.lastName}${emp.jobTitle ? ` (${emp.jobTitle})` : ""}${emp.employeeNumber ? ` · ${emp.employeeNumber}` : ""}`,
+    }))
+  }, [activeEmployees])
 
   // Check if attendance record already exists for this employee and date
   const existingAttendance = React.useMemo(() => {
@@ -263,6 +288,10 @@ export function AddAttendanceDialog({
         }`
       )
 
+      if (onSuccess) {
+        onSuccess()
+      }
+
       onOpenChange(false)
     } catch (err: any) {
       setError(err.message || "Failed to create manual attendance.")
@@ -292,6 +321,7 @@ export function AddAttendanceDialog({
                 <FieldLabel htmlFor="employee">Employee</FieldLabel>
 
                 <Select
+                  items={employeeItems}
                   value={employeeId}
                   onValueChange={(val) => {
                     setEmployeeId(val || "")
@@ -299,13 +329,15 @@ export function AddAttendanceDialog({
                   }}
                 >
                   <SelectTrigger id="employee">
-                    <SelectValue placeholder="Select employee" />
+                    <SelectValue placeholder="Select employee">
+                      {selectedEmployeeLabel}
+                    </SelectValue>
                   </SelectTrigger>
 
                   <SelectContent>
                     {activeEmployees.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id}>
-                        {emp.firstName} {emp.lastName} ({emp.jobTitle})
+                        {emp.firstName} {emp.lastName}{emp.jobTitle ? ` (${emp.jobTitle})` : ""}{emp.employeeNumber ? ` · ${emp.employeeNumber}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
