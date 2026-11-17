@@ -51,9 +51,9 @@ export async function POST(request: Request) {
     console.log("  Identifier:", employeeId || username || employeeNumber)
     console.log("  Source / ClientType:", eventSource)
     console.log("  Values from mobile / client:")
-    console.log("    matchScore:", incomingMatchScore)
-    console.log("    distance:", incomingDistance)
-    console.log("    similarity:", incomingSimilarity)
+    console.log("  matchScore:", incomingMatchScore)
+    console.log("  distance:", incomingDistance)
+    console.log("  similarity:", incomingSimilarity)
     console.log("==================================================")
 
     // Accept employeeId, username, or employeeNumber
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
           typeof employee.faceEmbedding === "string"
             ? JSON.parse(employee.faceEmbedding)
             : employee.faceEmbedding
-      } catch {}
+      } catch { }
     }
 
     // Parse live embedding from mobile app request
@@ -165,7 +165,7 @@ export async function POST(request: Request) {
       try {
         liveVector =
           typeof liveEmbedding === "string" ? JSON.parse(liveEmbedding) : liveEmbedding
-      } catch {}
+      } catch { }
     }
 
     // 1. If live vector is provided by Mobile App -> Compare on Server
@@ -313,118 +313,86 @@ export async function POST(request: Request) {
       )
     }
 
-    // Automatic Absent check: If employee is 5+ minutes late from scheduled shift start time
+    // Late Arrival Detection on Clock-In (5-min grace period marks as Late, NEVER blocks clock-in or marks absent)
+    let isLateArrival = false
+    let lateMinutes = 0
+    let scheduledShift: any = null
+
     if (actionType === "clock_in") {
-      const shift = await prisma.shift.findFirst({
+      scheduledShift = await prisma.shift.findFirst({
         where: {
           employeeId: employee.id,
           date: dateIso,
         },
       })
 
-      if (shift && shift.startTime) {
-        const [sH, sM] = shift.startTime.split(":").map(Number)
+      if (scheduledShift && scheduledShift.startTime) {
+        const [sH, sM] = scheduledShift.startTime.split(":").map(Number)
         const shiftStartMins = (sH || 0) * 60 + (sM || 0)
         const nowMins = serverDateObj.getHours() * 60 + serverDateObj.getMinutes()
 
-        const isMarkedAbsent =
-          attendanceRecord &&
-          (attendanceRecord.exceptionsJson?.includes("absent") ||
-            attendanceRecord.source === "auto_absent")
+        // Fetch org settings for late threshold (default 5 mins)
+        const orgSettings = await prisma.orgSettings.findFirst({
+          where: { id: "default" },
+        })
+        const lateThreshold = orgSettings?.lateThresholdMinutes ?? 5
 
-        if (isMarkedAbsent || nowMins > shiftStartMins + 5) {
-          if (!attendanceRecord) {
-            attendanceRecord = await prisma.attendanceRecord.create({
-              data: {
-                employeeId: employee.id,
-                siteId: targetSiteId,
-                date: dateIso,
-                shiftId: shift.id,
-                scheduledStartTime: shift.startTime,
-                scheduledEndTime: shift.endTime,
-                status: "exception",
-                exceptionsJson: JSON.stringify(["absent"]),
-                source: "auto_absent",
-                correctionReason: `Automatically marked absent: 5+ minutes late for shift (${shift.startTime}) without clocking in.`,
-                workedMinutes: 0,
-                grossMinutes: 0,
-                totalBreakMinutes: 0,
-              },
-              include: { events: true },
-            })
-          }
-
-          const existingNoti = await prisma.appNotification.findFirst({
-            where: {
-              employeeId: employee.id,
-              siteId: targetSiteId,
-              type: "absent",
-              metaJson: { contains: shift.id },
-            },
-          })
-
-          if (!existingNoti) {
-            await prisma.appNotification.create({
-              data: {
-                recipientRole: "management",
-                employeeId: employee.id,
-                employeeName: `${employee.firstName} ${employee.lastName}`,
-                siteId: targetSiteId,
-                siteName: employee.primarySite?.name || "Site",
-                type: "absent",
-                title: "Employee Automatically Marked Absent",
-                message: `${employee.firstName} ${employee.lastName} was automatically marked absent at ${employee.primarySite?.name || "Site"}. Scheduled start was ${shift.startTime} (5+ minutes late without clocking in).`,
-                timestamp: serverTimestamp,
-                isWarning: true,
-                read: false,
-                resolved: false,
-                metaJson: JSON.stringify({
-                  shiftId: shift.id,
-                  attendanceRecordId: attendanceRecord.id,
-                  date: dateIso,
-                  link: "/attendance",
-                  actionText: "Review Attendance",
-                }),
-              },
-            })
-          }
-
-          return NextResponse.json(
-            {
-              success: false,
-              isAbsent: true,
-              timestamp: serverTimestamp,
-              error: {
-                code: "MARKED_ABSENT",
-                message: `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${shift.startTime}). Please contact your site manager.`,
-              },
-              message: `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${shift.startTime}). Please contact your site manager.`,
-            },
-            { status: 400 }
-          )
+        if (nowMins > shiftStartMins + lateThreshold) {
+          isLateArrival = true
+          lateMinutes = Math.max(0, nowMins - shiftStartMins)
         }
+      }
+
+      // If an attendance record had previously been marked absent or auto_absent, clear it so employee can work normally!
+      if (attendanceRecord && (attendanceRecord.source === "auto_absent" || attendanceRecord.exceptionsJson?.includes("absent"))) {
+        let exceptions: string[] = []
+        try {
+          exceptions = JSON.parse(attendanceRecord.exceptionsJson || "[]")
+        } catch {
+          exceptions = []
+        }
+        exceptions = exceptions.filter((e: string) => e !== "absent")
+        if (isLateArrival && !exceptions.includes("late_arrival")) {
+          exceptions.push("late_arrival")
+        }
+
+        attendanceRecord = await prisma.attendanceRecord.update({
+          where: { id: attendanceRecord.id },
+          data: {
+            source: "clock_event",
+            status: isLateArrival ? "exception" : "normal",
+            exceptionsJson: JSON.stringify(exceptions),
+            correctionReason: null,
+          },
+          include: { events: true },
+        })
       }
     }
 
     // Upsert / Create record & clock event
     let createdEvent: any
     if (!attendanceRecord) {
-      const shift = await prisma.shift.findFirst({
-        where: {
-          employeeId: employee.id,
-          date: dateIso,
-        },
-      })
+      if (!scheduledShift) {
+        scheduledShift = await prisma.shift.findFirst({
+          where: {
+            employeeId: employee.id,
+            date: dateIso,
+          },
+        })
+      }
+
+      const initialExceptions = isLateArrival ? ["late_arrival"] : []
 
       attendanceRecord = await prisma.attendanceRecord.create({
         data: {
           employeeId: employee.id,
           siteId: targetSiteId,
           date: dateIso,
-          shiftId: shift?.id || null,
-          scheduledStartTime: shift?.startTime || null,
-          scheduledEndTime: shift?.endTime || null,
-          status: "normal",
+          shiftId: scheduledShift?.id || null,
+          scheduledStartTime: scheduledShift?.startTime || null,
+          scheduledEndTime: scheduledShift?.endTime || null,
+          status: isLateArrival ? "exception" : "normal",
+          exceptionsJson: JSON.stringify(initialExceptions),
           events: {
             create: {
               type: actionType,
@@ -447,6 +415,25 @@ export async function POST(request: Request) {
           source: eventSource,
         },
       })
+
+      if (isLateArrival) {
+        let exceptions: string[] = []
+        try {
+          exceptions = JSON.parse(attendanceRecord.exceptionsJson || "[]")
+        } catch {
+          exceptions = []
+        }
+        if (!exceptions.includes("late_arrival")) {
+          exceptions.push("late_arrival")
+          await prisma.attendanceRecord.update({
+            where: { id: attendanceRecord.id },
+            data: {
+              status: "exception",
+              exceptionsJson: JSON.stringify(exceptions),
+            },
+          })
+        }
+      }
     }
 
     // Safely save photo and biometric verification details to database
@@ -545,21 +532,33 @@ export async function POST(request: Request) {
         if (lateMins > lateThresholdMinutes) {
           notifications.push({
             id: `noti-${Date.now()}-3`,
-            recipientRole: "management",
+            recipientRole: "manager",
+            recipientUserId: location?.managerId || null,
             employeeId: employee.id,
             employeeName,
             siteId: targetSiteId,
             siteName,
-            type: "late_clock_in",
-            title: "Late Shift Arrival Warning",
-            message: `${employeeName} joined late for shift at ${siteName} (Scheduled: ${shift.startTime}, Clocked In: ${formattedTime} - ${lateMins} mins late)`,
+            type: "late_arrival",
+            title: `Late Arrival: ${employeeName} (${lateMins} mins late)`,
+            message: `${employeeName} clocked in late at ${siteName}. Scheduled: ${shift.startTime}, Actual: ${formattedTime} (${lateMins} mins late).`,
             timestamp: serverTimestamp,
             read: false,
             isWarning: true,
             meta: {
+              employeeId: employee.id,
+              employeeName,
+              shiftId: shift.id,
               scheduledTime: shift.startTime,
               clockTime: formattedTime,
               minsLate: lateMins,
+              lateDuration: `${lateMins} mins`,
+              attendanceRecordId: attendanceRecord.id,
+              siteId: targetSiteId,
+              siteName,
+              date: dateIso,
+              actionText: "Review Late Arrival",
+              openLateReview: true,
+              link: `/attendance?reviewRecordId=${attendanceRecord.id}&employeeId=${employee.id}&date=${dateIso}`,
             },
           })
         }
@@ -783,16 +782,16 @@ export async function POST(request: Request) {
         },
         todayShift: shift
           ? {
-              id: shift.id,
-              date: shift.date,
-              startTime: shift.startTime,
-              endTime: shift.endTime,
-              unpaidBreakMinutes: shift.unpaidBreakMinutes ?? 0,
-              role: shift.role || employee.jobTitle || "Staff",
-              status: shiftStatus,
-              allowed_actions: allowedActions,
-              late_allowed_minutes: 5,
-            }
+            id: shift.id,
+            date: shift.date,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+            unpaidBreakMinutes: shift.unpaidBreakMinutes ?? 0,
+            role: shift.role || employee.jobTitle || "Staff",
+            status: shiftStatus,
+            allowed_actions: allowedActions,
+            late_allowed_minutes: 5,
+          }
           : null,
         biometric: biometricPayload,
         history,

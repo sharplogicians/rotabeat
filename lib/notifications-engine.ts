@@ -432,9 +432,11 @@ export async function detectAndMarkLateAbsences() {
       if (!shift.startTime || !shift.employee || shift.employee.status !== "active") continue
 
       const shiftStartMins = parseTimeToMinutes(shift.startTime)
+      const shiftEndMins = shift.endTime ? parseTimeToMinutes(shift.endTime) : (shiftStartMins + 480)
 
-      // Only check if current time is more than 5 minutes past shift start time
-      if (nowMins <= shiftStartMins + LATE_THRESHOLD_MINUTES) {
+      // Only mark absent if the employee never clocked in and the shift has ended (plus 30 min buffer)
+      // Per RotaBeat policy: late arrivals during active shift hours are NOT marked absent.
+      if (nowMins <= (shiftEndMins > shiftStartMins ? shiftEndMins + 30 : 1440)) {
         continue
       }
 
@@ -475,7 +477,7 @@ export async function detectAndMarkLateAbsences() {
             status: "exception",
             exceptionsJson: JSON.stringify(["absent"]),
             source: "auto_absent",
-            correctionReason: `Automatically marked absent: 5+ minutes late for shift (${shift.startTime}) without clocking in.`,
+            correctionReason: `Automatically marked absent: Employee did not attend scheduled shift (${shift.startTime} – ${shift.endTime}).`,
             workedMinutes: 0,
             grossMinutes: 0,
             totalBreakMinutes: 0,
@@ -491,7 +493,7 @@ export async function detectAndMarkLateAbsences() {
             status: "exception",
             exceptionsJson: JSON.stringify(["absent"]),
             source: "auto_absent",
-            correctionReason: `Automatically marked absent: 5+ minutes late for shift (${shift.startTime}) without clocking in.`,
+            correctionReason: `Automatically marked absent: Employee did not attend scheduled shift (${shift.startTime} – ${shift.endTime}).`,
           },
         })
       }

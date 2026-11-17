@@ -386,44 +386,33 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
   const events = attendanceRecord?.events || []
   const currentStatus = deriveCurrentAttendanceStatus(events)
 
-  const isAbsent =
-    attendanceRecord?.exceptionsJson?.includes("absent") ||
-    attendanceRecord?.source === "auto_absent" ||
-    (todayShift?.startTime &&
-      events.length === 0 &&
-      (() => {
-        const [h, m] = todayShift.startTime.split(":").map(Number)
-        const shiftStartMins = (h || 0) * 60 + (m || 0)
-        const nowObj = new Date()
-        const nowMins = nowObj.getHours() * 60 + nowObj.getMinutes()
-        return nowMins > shiftStartMins + 5
-      })())
+  const [h, m] = todayShift?.startTime ? todayShift.startTime.split(":").map(Number) : [0, 0]
+  const shiftStartMins = (h || 0) * 60 + (m || 0)
+  const nowObj = new Date()
+  const nowMins = nowObj.getHours() * 60 + nowObj.getMinutes()
+  const isLate = Boolean(todayShift?.startTime && events.length === 0 && nowMins > shiftStartMins + 5)
+  const lateMinutes = isLate ? Math.max(0, nowMins - shiftStartMins) : 0
 
   let shiftStatus = "NOT_CHECKED_IN"
   let allowedActions: string[] = ["clock_in"]
 
-  if (isAbsent) {
-    shiftStatus = "ABSENT"
-    allowedActions = []
-  } else {
-    switch (currentStatus) {
-      case "not_clocked_in":
-        shiftStatus = "NOT_CHECKED_IN"
-        allowedActions = ["clock_in"]
-        break
-      case "working":
-        shiftStatus = "CLOCKED_IN"
-        allowedActions = ["break_start", "clock_out"]
-        break
-      case "on_break":
-        shiftStatus = "ON_BREAK"
-        allowedActions = ["break_end"]
-        break
-      case "clocked_out":
-        shiftStatus = "CLOCKED_OUT"
-        allowedActions = []
-        break
-    }
+  switch (currentStatus) {
+    case "not_clocked_in":
+      shiftStatus = isLate ? "LATE" : "NOT_CHECKED_IN"
+      allowedActions = ["clock_in"]
+      break
+    case "working":
+      shiftStatus = "CLOCKED_IN"
+      allowedActions = ["break_start", "clock_out"]
+      break
+    case "on_break":
+      shiftStatus = "ON_BREAK"
+      allowedActions = ["break_end"]
+      break
+    case "clocked_out":
+      shiftStatus = "CLOCKED_OUT"
+      allowedActions = []
+      break
   }
 
   // Compute event history for today (preserving previous punches on re-login)
@@ -504,6 +493,8 @@ async function handleAppLoginRequest(body: any, request: Request, todayIso: stri
         status: shiftStatus,
         allowed_actions: allowedActions,
         late_allowed_minutes: 5,
+        is_late: isLate,
+        late_minutes: lateMinutes,
       },
       history,
     },

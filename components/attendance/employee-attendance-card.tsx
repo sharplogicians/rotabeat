@@ -36,6 +36,7 @@ import {
   CalendarRange,
   Lock,
   Camera,
+  AlertTriangle,
 } from "lucide-react"
 import { LiveClockCameraModal } from "@/components/attendance/live-camera-modal"
 import {
@@ -130,24 +131,19 @@ export function EmployeeAttendanceCard({
     return deriveCurrentAttendanceStatus(events)
   }, [events])
 
-  const isAbsent = React.useMemo(() => {
+  const isLateArrival = React.useMemo(() => {
     if (events.length > 0) return false
-    if (markedAbsent) return true
-    if (initialStatus === "absent") return true
-    if (errorMsg && errorMsg.toLowerCase().includes("marked absent")) return true
     if (todayShift?.startTime) {
       const [h, m] = todayShift.startTime.split(":").map(Number)
       if (!isNaN(h) && !isNaN(m)) {
         const now = new Date()
         const nowMins = now.getHours() * 60 + now.getMinutes()
         const shiftMins = h * 60 + m
-        if (nowMins > shiftMins + 5) {
-          return true
-        }
+        return nowMins > shiftMins + 5
       }
     }
     return false
-  }, [events.length, markedAbsent, initialStatus, errorMsg, todayShift?.startTime])
+  }, [events.length, todayShift?.startTime])
 
   const workedTotals = React.useMemo(() => {
     return computeWorkedTotals(
@@ -170,13 +166,6 @@ export function EmployeeAttendanceCard({
   }, [state.currentWeekStart])
 
   function handleAttendanceAction(action: AttendanceActionType) {
-    if (action === "clock_in" && isAbsent) {
-      const errorText = `You have been automatically marked absent because you are more than 5 minutes late for your scheduled shift (${todayShift?.startTime || ""}). Please contact your site manager.`
-      setErrorMsg(errorText)
-      toast.error(errorText)
-      return
-    }
-
     const val = validateAttendanceAction(currentStatus, action, events)
     if (!val.valid) {
       setErrorMsg(val.error || "Action not allowed.")
@@ -293,11 +282,20 @@ export function EmployeeAttendanceCard({
   }
 
   const renderStatusBadge = () => {
-    if (isAbsent && events.length === 0) {
+    if (markedAbsent && events.length === 0) {
       return (
         <Badge variant="destructive" className="px-3 py-1 text-xs font-semibold bg-red-600 hover:bg-red-600 text-white dark:bg-red-700 shadow-sm">
           <AlertCircle className="w-3.5 h-3.5 mr-1 text-white" />
           Marked Absent
+        </Badge>
+      )
+    }
+
+    if (isLateArrival && events.length === 0) {
+      return (
+        <Badge className="px-3 py-1 text-xs font-semibold bg-amber-500/15 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 shadow-sm">
+          <Clock className="w-3.5 h-3.5 mr-1" />
+          Late Arrival Expected
         </Badge>
       )
     }
@@ -472,27 +470,15 @@ export function EmployeeAttendanceCard({
           {/* Action Availability (Open strictly for Today's Date) */}
           <div className="flex flex-col gap-3 py-1">
             {currentStatus === "not_clocked_in" && (
-              isAbsent ? (
-                <div className="space-y-3">
-                  <Button
-                    size="lg"
-                    disabled={true}
-                    className="w-full h-14 text-base font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed shadow-none border border-border flex items-center justify-center gap-2"
-                  >
-                    <Lock className="h-5 w-5 text-red-500" />
-                    Clock In Blocked — Marked Absent
-                  </Button>
-                  <div className="rounded-lg border border-red-500/20 bg-red-50/70 dark:bg-red-950/30 p-3.5 text-center text-xs text-red-800 dark:text-red-300 space-y-1">
-                    <p className="font-semibold flex items-center justify-center gap-1.5 text-red-700 dark:text-red-400">
-                      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
-                      Shift Locked: Automatically Marked Absent
-                    </p>
-                    <p className="text-muted-foreground">
-                      You are more than 5 minutes late for your scheduled shift ({todayShift?.startTime || "scheduled time"}). Clock In is blocked. Please contact your site manager to update your attendance.
-                    </p>
+              <div className="space-y-3">
+                {isLateArrival && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>
+                      Scheduled start was <strong>{todayShift?.startTime}</strong> (past 5-min grace period). Your clock-in will be recorded as <strong>Late Arrival</strong>.
+                    </span>
                   </div>
-                </div>
-              ) : (
+                )}
                 <Button
                   size="lg"
                   className="w-full h-14 text-base font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all duration-200"
@@ -511,7 +497,7 @@ export function EmployeeAttendanceCard({
                     </>
                   )}
                 </Button>
-              )
+              </div>
             )}
 
             {currentStatus === "working" && (() => {
