@@ -40,6 +40,22 @@ export async function POST(request: Request) {
       clientType === "mobile" ||
       Boolean(request.headers.get("x-client-type")?.includes("app"))
 
+    const incomingMatchScore = body.matchScore ?? body.faceMatchScore ?? body.biometric?.matchScore ?? null
+    const incomingDistance = body.distance ?? body.biometric?.distance ?? null
+    const incomingSimilarity = body.similarity ?? body.biometric?.similarity ?? null
+
+    console.log("==================================================")
+    console.log("[ATTENDANCE ACTION API] Incoming Request:")
+    console.log("  URL: /api/attendance/action")
+    console.log("  Action:", action)
+    console.log("  Identifier:", employeeId || username || employeeNumber)
+    console.log("  Source / ClientType:", eventSource)
+    console.log("  Values from mobile / client:")
+    console.log("    matchScore:", incomingMatchScore)
+    console.log("    distance:", incomingDistance)
+    console.log("    similarity:", incomingSimilarity)
+    console.log("==================================================")
+
     // Accept employeeId, username, or employeeNumber
     const rawIdentifier = (employeeId || username || employeeNumber || "").trim()
 
@@ -177,6 +193,16 @@ export async function POST(request: Request) {
       finalFaceMatchScore = matchResult.score
       finalFaceVerified = matchResult.matched
       biometricVerifiedBy = "server_vector_comparison"
+
+      console.log("==================================================")
+      console.log("[BIOMETRIC VERIFICATION RESULT]")
+      console.log("  Employee:", `${employee.firstName} ${employee.lastName} (${employee.employeeNumber})`)
+      console.log("  matchScore:", finalFaceMatchScore)
+      console.log("  distance:", finalFaceDistance)
+      console.log("  similarity:", finalFaceSimilarity)
+      console.log("  matched:", finalFaceVerified)
+      console.log("  verifiedBy:", biometricVerifiedBy)
+      console.log("==================================================")
 
       if (!matchResult.matched) {
         return NextResponse.json(
