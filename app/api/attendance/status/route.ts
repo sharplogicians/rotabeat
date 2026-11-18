@@ -92,21 +92,23 @@ export async function GET(request: Request) {
       },
     })
 
-    const isAbsent =
-      attendanceRecord?.exceptionsJson?.includes("absent") ||
-      attendanceRecord?.source === "auto_absent" ||
-      (todayShift?.startTime &&
-        events.length === 0 &&
-        (() => {
-          const [h, m] = todayShift.startTime.split(":").map(Number)
-          const shiftStartMins = (h || 0) * 60 + (m || 0)
-          const nowObj = new Date()
-          const nowMins = nowObj.getHours() * 60 + nowObj.getMinutes()
-          return nowMins > shiftStartMins + 5
-        })())
+    // Late detection (after 5-min grace period)
+    let isLate = false
+    let lateMinutes = 0
 
-    if (isAbsent && events.length === 0) {
-      status = "absent" as any
+    if (todayShift?.startTime && events.length === 0) {
+      const [h, m] = todayShift.startTime.split(":").map(Number)
+      const shiftStartMins = (h || 0) * 60 + (m || 0)
+      const nowObj = new Date()
+      const nowMins = nowObj.getHours() * 60 + nowObj.getMinutes()
+      if (nowMins > shiftStartMins + 5) {
+        isLate = true
+        lateMinutes = Math.max(0, nowMins - shiftStartMins)
+      }
+    }
+
+    if (isLate && events.length === 0) {
+      status = "late" as any
     }
 
     // Next / upcoming shift on or after today
@@ -145,8 +147,10 @@ export async function GET(request: Request) {
         faceEmbedding: employee.faceEmbedding || null,
       },
       currentStatus: status,
-      currentStatusLabel: status === ("absent" as any) ? "Absent" : getAttendanceStateLabel(status),
-      isAbsent: status === ("absent" as any),
+      currentStatusLabel: status === ("late" as any) ? "Late" : getAttendanceStateLabel(status),
+      isLate,
+      lateMinutes,
+      isAbsent: false,
       todayShift: todayShift ? {
         id: todayShift.id,
         date: todayShift.date,

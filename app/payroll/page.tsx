@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/empty"
 import { addDays, formatDateTime, formatWeekRange, CURRENT_WEEK_START } from "@/lib/date-utils"
 import { computeWorkedTotals, minutesToHours } from "@/lib/calc"
-import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Lock } from "lucide-react"
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Lock, DollarSign, Check, X, Clock, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 
 export default function PayrollExportsPage() {
@@ -52,6 +52,52 @@ export default function PayrollExportsPage() {
   const [weekStart, setWeekStart] = React.useState(CURRENT_WEEK_START)
   const [selectedSiteIds, setSelectedSiteIds] = React.useState<string[]>([])
   const [submitting, setSubmitting] = React.useState(false)
+  const [adjustments, setAdjustments] = React.useState<any[]>([])
+  const [adjustmentsLoading, setAdjustmentsLoading] = React.useState(false)
+
+  const fetchAdjustments = React.useCallback(async () => {
+    try {
+      setAdjustmentsLoading(true)
+      const res = await fetch(apiUrl("/api/payroll/adjustments"))
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && Array.isArray(data.adjustments)) {
+          setAdjustments(data.adjustments)
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load payroll adjustments:", err)
+    } finally {
+      setAdjustmentsLoading(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    fetchAdjustments()
+  }, [fetchAdjustments])
+
+  async function handleReviewAdjustment(adjId: string, action: "approve" | "reject") {
+    try {
+      const res = await fetch(apiUrl("/api/payroll/adjustments"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adjustmentId: adjId,
+          action,
+          reviewedBy: actor.name,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast.success(action === "approve" ? "Adjustment approved." : "Adjustment waived.")
+        fetchAdjustments()
+      } else {
+        toast.error(data.message || "Failed to update adjustment.")
+      }
+    } catch {
+      toast.error("Network error updating adjustment.")
+    }
+  }
 
   const weekEnd = React.useMemo(() => addDays(weekStart, 6), [weekStart])
 
@@ -355,6 +401,128 @@ export default function PayrollExportsPage() {
               {submitting ? "Generating export..." : "Generate export"}
             </Button>
           </CardFooter>
+        </Card>
+
+        {/* Proposed Payroll Adjustments Section */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="size-5 text-amber-500" />
+                  Proposed Payroll Adjustments (Late Unpaid Time)
+                </CardTitle>
+                <CardDescription>
+                  Pro-rata deductions calculated strictly for unpaid late minutes at actual contract pay rates. Review and approve prior to final payroll.
+                </CardDescription>
+              </div>
+              {adjustments.length > 0 && (
+                <Badge variant="outline" className="text-xs">
+                  {adjustments.filter((a) => a.status === "proposed").length} pending review
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0 sm:p-6 overflow-x-auto min-w-0 max-w-full">
+            {adjustments.length === 0 ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                No proposed payroll adjustments. Shifts are on time or exceptions have been settled.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Site</TableHead>
+                    <TableHead>Sched vs Worked</TableHead>
+                    <TableHead>Late</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Proposed Deduction</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {adjustments.map((adj) => {
+                    const isPending = adj.status === "proposed"
+                    return (
+                      <TableRow key={adj.id}>
+                        <TableCell>
+                          <div className="font-medium text-xs">{adj.employeeName}</div>
+                          <div className="text-[11px] text-muted-foreground">{adj.employeeNumber}</div>
+                        </TableCell>
+                        <TableCell className="text-xs">{adj.date}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{adj.siteName}</TableCell>
+                        <TableCell className="text-xs">
+                          {adj.scheduledHours.toFixed(1)}h sched / {adj.workedHours.toFixed(1)}h worked
+                        </TableCell>
+                        <TableCell className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                          {adj.lateMinutes} mins
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          £{adj.hourlyRate.toFixed(2)}/hr
+                        </TableCell>
+                        <TableCell className="text-xs font-bold text-destructive">
+                          -£{adj.deductionAmount.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              adj.status === "approved"
+                                ? "default"
+                                : adj.status === "rejected"
+                                ? "secondary"
+                                : "outline"
+                            }
+                            className={`text-[10px] ${
+                              adj.status === "proposed"
+                                ? "text-amber-600 border-amber-300 dark:text-amber-400"
+                                : adj.status === "approved"
+                                ? "bg-emerald-600 text-white"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {adj.status === "proposed"
+                              ? "Pending Review"
+                              : adj.status === "approved"
+                              ? "Approved"
+                              : "Waived"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isPending ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => handleReviewAdjustment(adj.id, "approve")}
+                              >
+                                <Check className="size-3.5 mr-1" /> Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => handleReviewAdjustment(adj.id, "reject")}
+                              >
+                                <X className="size-3.5 mr-1" /> Waive
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              {adj.reviewedBy ? `by ${adj.reviewedBy}` : "Reviewed"}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
         </Card>
 
         <Card>

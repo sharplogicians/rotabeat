@@ -530,6 +530,15 @@ export async function POST(request: Request) {
         const lateMins = clockTotalMins - schedTotalMins
 
         if (lateMins > lateThresholdMinutes) {
+          const lateHours = Math.floor(lateMins / 60)
+          const remainingMins = lateMins % 60
+          const lateDurationFormatted =
+            lateHours > 0
+              ? remainingMins > 0
+                ? `${lateHours} hr ${remainingMins} mins`
+                : `${lateHours} hr`
+              : `${lateMins} mins`
+
           notifications.push({
             id: `noti-${Date.now()}-3`,
             recipientRole: "manager",
@@ -539,8 +548,8 @@ export async function POST(request: Request) {
             siteId: targetSiteId,
             siteName,
             type: "late_arrival",
-            title: `Late Arrival: ${employeeName} (${lateMins} mins late)`,
-            message: `${employeeName} clocked in late at ${siteName}. Scheduled: ${shift.startTime}, Actual: ${formattedTime} (${lateMins} mins late).`,
+            title: `Late Arrival: ${employeeName} (${lateDurationFormatted} late)`,
+            message: `${employeeName} clocked in late at ${siteName}. Scheduled Start: ${shift.startTime} | Actual Clock-In: ${formattedTime} | Total Late: ${lateDurationFormatted}.`,
             timestamp: serverTimestamp,
             read: false,
             isWarning: true,
@@ -548,10 +557,14 @@ export async function POST(request: Request) {
               employeeId: employee.id,
               employeeName,
               shiftId: shift.id,
+              scheduledStartTime: shift.startTime,
               scheduledTime: shift.startTime,
+              actualClockInTime: formattedTime,
               clockTime: formattedTime,
+              lateMinutes: lateMins,
               minsLate: lateMins,
-              lateDuration: `${lateMins} mins`,
+              lateDuration: lateDurationFormatted,
+              totalLateDuration: lateDurationFormatted,
               attendanceRecordId: attendanceRecord.id,
               siteId: targetSiteId,
               siteName,
@@ -643,6 +656,163 @@ export async function POST(request: Request) {
         read: false,
         isWarning: false,
       })
+
+      // Accurate Shift Worked Totals & Proposed Late Payroll Deduction Calculation
+      try {
+        const allEvents = [...existingEvents, createdEvent].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        )
+        const firstClockIn = allEvents.find((e) => e.type === "clock_in")
+        const lastClockOut = createdEvent
+
+        if (firstClockIn && lastClockOut) {
+          const inMs = new Date(firstClockIn.timestamp).getTime()
+          const outMs = new Date(lastClockOut.timestamp).getTime()
+          const grossMins = Math.max(0, Math.round((outMs - inMs) / 60000))
+
+          let totalBreakMins = 0
+          let currentBreakStart: number | null = null
+          for (const ev of allEvents) {
+            if (ev.type === "break_start") {
+              currentBreakStart = new Date(ev.timestamp).getTime()
+            } else if (ev.type === "break_end" && currentBreakStart !== null) {
+              const breakEndMs = new Date(ev.timestamp).getTime()
+              totalBreakMins += Math.max(0, Math.round((breakEndMs - currentBreakStart) / 60000))
+              currentBreakStart = null
+            }
+          }
+
+          const workedMins = Math.max(0, grossMins - totalBreakMins)
+
+          await prisma.attendanceRecord.update({
+            where: { id: attendanceRecord.id },
+            data: {
+              grossMinutes: grossMins,
+              totalBreakMinutes: totalBreakMins,
+              workedMinutes: workedMins,
+            },
+          })
+
+          // Calculate proposed payroll adjustment for unworked late time
+          const orgSettings = await prisma.orgSettings.findFirst({
+            where: { id: "default" },
+          })
+          const isLateDeductionEnabled = orgSettings?.lateDeductionEnabled ?? true
+          const lateGraceMins = orgSettings?.lateGracePeriodMinutes ?? 5
+
+          const shiftForCalc =
+            shift ||
+            (await prisma.shift.findFirst({
+              where: {
+                employeeId: employee.id,
+                date: dateIso,
+              },
+            }))
+
+          if (isLateDeductionEnabled && shiftForCalc && shiftForCalc.startTime && shiftForCalc.endTime) {
+            const [sH, sM] = shiftForCalc.startTime.split(":").map(Number)
+            const [eH, eM] = shiftForCalc.endTime.split(":").map(Number)
+            const schedStartMins = (sH || 0) * 60 + (sM || 0)
+            const schedEndMins = (eH || 0) * 60 + (eM || 0)
+            const schedGrossMins = Math.max(0, schedEndMins - schedStartMins)
+            const schedBreakMins = shiftForCalc.unpaidBreakMinutes || 0
+            const scheduledShiftMins = Math.max(0, schedGrossMins - schedBreakMins)
+
+            const clockInTime = new Date(firstClockIn.timestamp)
+            const clockInMins = clockInTime.getHours() * 60 + clockInTime.getMinutes()
+            const lateArrivalMinutes = Math.max(0, clockInMins - schedStartMins)
+
+            // Deduct ONLY applicable unpaid time when employee arrived late and worked less than scheduled
+            if (lateArrivalMinutes > lateGraceMins && workedMins < scheduledShiftMins) {
+              const unpaidLateMinutes = Math.min(
+                lateArrivalMinutes,
+                Math.max(0, scheduledShiftMins - workedMins)
+              )
+
+              const hourlyRate =
+                employee.payType === "hourly"
+                  ? Number(employee.hourlyRate) || 0
+                  : (Number(employee.salaryAnnual) || 0) / (52 * 40)
+
+              if (hourlyRate > 0 && unpaidLateMinutes > 0) {
+                const deductionAmount = Number(
+                  ((unpaidLateMinutes / 60) * hourlyRate).toFixed(2)
+                )
+                const scheduledHours = Number((scheduledShiftMins / 60).toFixed(2))
+                const workedHours = Number((workedMins / 60).toFixed(2))
+
+                // Upsert proposed PayrollAdjustment
+                const existingAdj = await prisma.payrollAdjustment.findFirst({
+                  where: {
+                    attendanceRecordId: attendanceRecord.id,
+                  },
+                })
+
+                if (!existingAdj) {
+                  await prisma.payrollAdjustment.create({
+                    data: {
+                      attendanceRecordId: attendanceRecord.id,
+                      shiftId: shiftForCalc.id,
+                      employeeId: employee.id,
+                      siteId: targetSiteId,
+                      date: dateIso,
+                      payType: employee.payType || "hourly",
+                      hourlyRate,
+                      scheduledHours,
+                      workedHours,
+                      lateMinutes: unpaidLateMinutes,
+                      deductionAmount,
+                      status: "proposed",
+                    },
+                  })
+                } else if (existingAdj.status === "proposed") {
+                  await prisma.payrollAdjustment.update({
+                    where: { id: existingAdj.id },
+                    data: {
+                      hourlyRate,
+                      scheduledHours,
+                      workedHours,
+                      lateMinutes: unpaidLateMinutes,
+                      deductionAmount,
+                    },
+                  })
+                }
+
+                // Notify manager of proposed deduction ready for review
+                notifications.push({
+                  id: `noti-${Date.now()}-deduct`,
+                  recipientRole: "manager",
+                  recipientUserId: location?.managerId || null,
+                  employeeId: employee.id,
+                  employeeName,
+                  siteId: targetSiteId,
+                  siteName,
+                  type: "payroll_deduction_approved",
+                  title: `Proposed Payroll Deduction: ${employeeName} (-£${deductionAmount})`,
+                  message: `${employeeName} worked ${workedHours} hrs vs scheduled ${scheduledHours} hrs (${unpaidLateMinutes} mins unpaid late time). Proposed deduction: £${deductionAmount} at £${hourlyRate.toFixed(2)}/hr.`,
+                  timestamp: serverTimestamp,
+                  read: false,
+                  isWarning: true,
+                  meta: {
+                    attendanceRecordId: attendanceRecord.id,
+                    employeeId: employee.id,
+                    employeeName,
+                    unpaidLateMinutes,
+                    deductionAmount,
+                    scheduledHours,
+                    workedHours,
+                    hourlyRate,
+                    actionText: "Review Deduction",
+                    link: `/payroll`,
+                  },
+                })
+              }
+            }
+          }
+        }
+      } catch (calcErr) {
+        console.error("Failed to calculate shift worked totals or proposed deduction:", calcErr)
+      }
     }
 
     if (notifications.length > 0) {

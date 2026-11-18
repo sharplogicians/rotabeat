@@ -201,12 +201,14 @@ export interface AuditEvent {
 }
 
 export interface OrgSettings {
-  orgName: string
+  orgName?: string
   timeZone: string
   weekStart: "monday"
   defaultPayPeriod: "weekly"
   earlyClockInMinutes: number
   lateThresholdMinutes: number
+  lateGracePeriodMinutes?: number
+  lateDeductionEnabled?: boolean
   rounding: "exact" | "5" | "15"
   breaksClocked: boolean
   duplicateActionPrevention: boolean
@@ -218,11 +220,53 @@ export interface OrgSettings {
 export type NotificationType =
   | "clock_in"
   | "late_clock_in"
+  | "late_arrival"
+  | "warning_issued"
+  | "payroll_deduction_approved"
   | "break_start"
   | "break_end"
   | "extra_break"
   | "clock_out"
   | "timesheet_approved"
+
+export interface PayrollAdjustment {
+  id: string
+  attendanceRecordId?: string | null
+  shiftId?: string | null
+  employeeId: string
+  employeeName?: string
+  siteId: string
+  siteName?: string
+  date: string
+  payType: "hourly" | "salaried"
+  hourlyRate: number
+  scheduledHours: number
+  workedHours: number
+  lateMinutes: number
+  deductionAmount: number
+  status: "proposed" | "approved" | "rejected"
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  reviewNotes?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface EmployeeWarning {
+  id: string
+  employeeId: string
+  employeeName?: string
+  attendanceRecordId?: string | null
+  shiftId?: string | null
+  date: string
+  managerName: string
+  managerRole: string
+  lateMinutes: number
+  reason: string
+  acknowledged: boolean
+  acknowledgedAt?: string | null
+  createdAt?: string
+}
 
 export interface AppNotification {
   id: string

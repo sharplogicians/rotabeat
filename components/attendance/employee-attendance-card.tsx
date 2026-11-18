@@ -37,6 +37,7 @@ import {
   Lock,
   Camera,
   AlertTriangle,
+  ShieldAlert,
 } from "lucide-react"
 import { LiveClockCameraModal } from "@/components/attendance/live-camera-modal"
 import {
@@ -97,13 +98,36 @@ export function EmployeeAttendanceCard({
   const [events, setEvents] = React.useState<ClockEventLike[]>(initialEvents)
   const [loading, setLoading] = React.useState<boolean>(false)
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
-  const [markedAbsent, setMarkedAbsent] = React.useState<boolean>(initialStatus === "absent")
+  const [isLateArrivalInitial, setIsLateArrivalInitial] = React.useState<boolean>(
+    initialStatus === "late" || initialStatus === "absent"
+  )
 
   React.useEffect(() => {
-    if (initialStatus === "absent") {
-      setMarkedAbsent(true)
+    if (initialStatus === "late" || initialStatus === "absent") {
+      setIsLateArrivalInitial(true)
     }
   }, [initialStatus])
+
+  // Active warning state for employee
+  const [activeWarning, setActiveWarning] = React.useState<any>(null)
+
+  React.useEffect(() => {
+    async function checkWarning() {
+      try {
+        const res = await fetch(apiUrl(`/api/attendance/warnings?employeeId=${employee.id}`))
+        if (res.ok) {
+          const data = await res.json()
+          if (data.success && Array.isArray(data.warnings)) {
+            const unacked = data.warnings.find((w: any) => !w.acknowledged)
+            setActiveWarning(unacked || null)
+          }
+        }
+      } catch {}
+    }
+    if (employee?.id) {
+      checkWarning()
+    }
+  }, [employee?.id])
 
   // Confirmation state
   const [confirmationData, setConfirmationData] = React.useState<{
@@ -219,7 +243,7 @@ export function EmployeeAttendanceCard({
         const errMsg = json.message || "Failed to submit attendance action."
         setErrorMsg(errMsg)
         if (json.isAbsent || (errMsg && errMsg.toLowerCase().includes("marked absent"))) {
-          setMarkedAbsent(true)
+          setIsLateArrivalInitial(true)
         }
         setCameraModalOpen(false)
         setPendingAction(null)
@@ -282,20 +306,14 @@ export function EmployeeAttendanceCard({
   }
 
   const renderStatusBadge = () => {
-    if (markedAbsent && events.length === 0) {
+    if (
+      (isLateArrival || isLateArrivalInitial || initialStatus === "late" || initialStatus === "absent") &&
+      events.length === 0
+    ) {
       return (
-        <Badge variant="destructive" className="px-3 py-1 text-xs font-semibold bg-red-600 hover:bg-red-600 text-white dark:bg-red-700 shadow-sm">
-          <AlertCircle className="w-3.5 h-3.5 mr-1 text-white" />
-          Marked Absent
-        </Badge>
-      )
-    }
-
-    if (isLateArrival && events.length === 0) {
-      return (
-        <Badge className="px-3 py-1 text-xs font-semibold bg-amber-500/15 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 shadow-sm">
-          <Clock className="w-3.5 h-3.5 mr-1" />
-          Late Arrival Expected
+        <Badge className="px-3 py-1 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-sm border-0">
+          <Clock className="w-3.5 h-3.5 mr-1 text-white" />
+          Late
         </Badge>
       )
     }
@@ -372,6 +390,42 @@ export function EmployeeAttendanceCard({
           </div>
 
           <div className="pt-3 flex justify-center">{renderStatusBadge()}</div>
+
+          {activeWarning && (
+            <div className="mt-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-950 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-2xs text-left">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-semibold text-amber-900 dark:text-amber-300">
+                    Formal Late Warning ({activeWarning.lateMinutes} mins late on {activeWarning.date})
+                  </strong>
+                  <span className="text-[11px] text-amber-800/90 dark:text-amber-300/80">
+                    Manager Note: &ldquo;{activeWarning.reason}&rdquo;
+                  </span>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs bg-white dark:bg-slate-900 hover:bg-amber-100 border-amber-400 text-amber-900 dark:text-amber-200 shrink-0 font-medium"
+                onClick={async () => {
+                  try {
+                    await fetch(apiUrl("/api/attendance/warnings"), {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ warningId: activeWarning.id }),
+                    })
+                    toast.success("Warning acknowledged.")
+                    setActiveWarning(null)
+                  } catch {
+                    toast.error("Failed to acknowledge warning.")
+                  }
+                }}
+              >
+                Acknowledge
+              </Button>
+            </div>
+          )}
         </CardHeader>
 
         <CardContent className="space-y-4 pt-1">

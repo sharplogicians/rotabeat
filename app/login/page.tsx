@@ -482,12 +482,21 @@ export default function LoginPage() {
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>RotaBeat Workforce System</span>
-          <a
-            href="/privacy-policy"
-            className="hover:text-indigo-600 dark:hover:text-indigo-400 underline transition-colors"
-          >
-            Privacy Policy
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href="/terms-of-service"
+              className="hover:text-indigo-600 dark:hover:text-indigo-400 underline transition-colors"
+            >
+              Terms
+            </a>
+            <span>·</span>
+            <a
+              href="/privacy-policy"
+              className="hover:text-indigo-600 dark:hover:text-indigo-400 underline transition-colors"
+            >
+              Privacy
+            </a>
+          </div>
         </div>
       </div>
 
@@ -536,8 +545,12 @@ export default function LoginPage() {
         <div className="relative z-10 flex items-center justify-between text-xs text-indigo-200/80 border-t border-white/10 pt-4">
           <span>RotaBeat Platform</span>
           <div className="flex items-center gap-2">
+            <a href="/terms-of-service" className="hover:text-white underline transition-colors">
+              Terms
+            </a>
+            <span>·</span>
             <a href="/privacy-policy" className="hover:text-white underline transition-colors">
-              Privacy Policy
+              Privacy
             </a>
             <span>·</span>
             <span>Fast · Accurate · Compliant</span>

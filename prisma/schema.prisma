@@ -288,17 +288,64 @@ model AuditEvent {
 
 model OrgSettings {
   id                        String  @id @default("default")
+  orgName                   String?
   timeZone                  String  @default("Europe/London")
   weekStart                 String  @default("monday")
   defaultPayPeriod          String  @default("weekly")
   earlyClockInMinutes       Int     @default(15)
   lateThresholdMinutes      Int     @default(5)
+  lateGracePeriodMinutes    Int     @default(5)
+  lateDeductionEnabled      Boolean @default(true)
   rounding                  String  @default("exact")
   breaksClocked             Boolean @default(true)
   duplicateActionPrevention Boolean @default(true)
   overtimeEnabled           Boolean @default(true)
   weeklyOvertimeThreshold   Int     @default(40)
   weeklyApprovalEmailReminder Boolean @default(true)
+}
+
+model PayrollAdjustment {
+  id                  String   @id @default(cuid())
+  attendanceRecordId  String?
+  shiftId             String?
+  employeeId          String
+  siteId              String
+  date                String
+  payType             String   @default("hourly")
+  hourlyRate          Float    @default(0)
+  scheduledHours      Float    @default(0)
+  workedHours         Float    @default(0)
+  lateMinutes         Int      @default(0)
+  deductionAmount     Float    @default(0)
+  status              String   @default("proposed") // proposed, approved, rejected
+  reviewedBy          String?
+  reviewedAt          String?
+  reviewNotes         String?  @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([siteId])
+  @@index([date])
+  @@index([status])
+}
+
+model EmployeeWarning {
+  id                 String    @id @default(cuid())
+  employeeId         String
+  attendanceRecordId String?
+  shiftId            String?
+  date               String
+  managerName        String
+  managerRole        String    @default("manager")
+  lateMinutes        Int       @default(0)
+  reason             String    @db.Text
+  acknowledged       Boolean   @default(false)
+  acknowledgedAt     DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([employeeId])
+  @@index([date])
 }
 
 model AppNotification {

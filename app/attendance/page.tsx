@@ -7,6 +7,7 @@ import { CorrectionDrawer } from "@/components/attendance/correction-drawer"
 import { AddAttendanceDialog } from "@/components/attendance/add-attendance-dialog"
 import { AttendanceDetailsDialog } from "@/components/attendance/attendance-details-dialog"
 import { AuditHistoryDialog } from "@/components/attendance/audit-history-dialog"
+import { LateReviewDialog } from "@/components/attendance/late-review-dialog"
 import { useAppStore, useCurrentSite, useCurrentUser } from "@/lib/store"
 import { TODAY_ISO, formatDayMonth, formatTime12, formatTimestamp12, weekDays, addDays } from "@/lib/date-utils"
 import { computeWorkedTotals, EXCEPTION_LABELS, attendanceStatusLabel } from "@/lib/calc"
@@ -41,6 +42,7 @@ export default function AttendancePage() {
   const [drawerRow, setDrawerRow] = React.useState<Row | null>(null)
   const [detailsRow, setDetailsRow] = React.useState<Row | null>(null)
   const [historyRow, setHistoryRow] = React.useState<Row | null>(null)
+  const [lateReviewRecord, setLateReviewRecord] = React.useState<any>(null)
   const [addDialogOpen, setAddDialogOpen] = React.useState(false)
 
   const activeSiteId = site?.id || ""
@@ -477,8 +479,43 @@ export default function AttendancePage() {
                             {row.record && row.record.exceptions.length > 0 && (
                               <div className="flex flex-wrap gap-1">
                                 {row.record.exceptions.map((ex) => (
-                                  <Badge key={ex} variant="outline" className="text-xs whitespace-nowrap">
+                                  <Badge
+                                    key={ex}
+                                    variant="outline"
+                                    className={`text-xs whitespace-nowrap ${
+                                      ex === "late_arrival"
+                                        ? "cursor-pointer hover:bg-amber-500/15 border-amber-400 text-amber-700 dark:text-amber-400 font-semibold"
+                                        : ""
+                                    }`}
+                                    onClick={() => {
+                                      if (ex === "late_arrival") {
+                                        const firstClockIn = events.find((e) => e.type === "clock_in")
+                                        const shiftStartRaw = matchedShift?.startTime || row.record?.scheduledStartTime
+                                        let minsLate = 0
+                                        if (shiftStartRaw && firstClockIn) {
+                                          const [sH, sM] = shiftStartRaw.split(":").map(Number)
+                                          const inD = new Date(firstClockIn.timestamp)
+                                          minsLate = Math.max(0, inD.getHours() * 60 + inD.getMinutes() - ((sH || 0) * 60 + (sM || 0)))
+                                        }
+                                        const clockInTimeStr = clockInEv ? formatTimestamp12(clockInEv.timestamp) : clockIn
+                                        setLateReviewRecord({
+                                          id: row.record!.id,
+                                          employeeId: row.employee.id,
+                                          employeeName: `${row.employee.firstName} ${row.employee.lastName}`,
+                                          date: row.date,
+                                          scheduledStartTime: shiftStartRaw,
+                                          scheduledEndTime: matchedShift?.endTime || row.record?.scheduledEndTime,
+                                          actualClockInTime: clockInTimeStr !== "—" ? clockInTimeStr : "Late",
+                                          lateMinutes: minsLate,
+                                          hourlyRate: row.employee.hourlyRate || 10,
+                                          siteId: activeSiteId || row.employee.primarySiteId,
+                                          siteName: site?.name || "Site",
+                                        })
+                                      }
+                                    }}
+                                  >
                                     {EXCEPTION_LABELS[ex] || ex}
+                                    {ex === "late_arrival" && " ↗"}
                                   </Badge>
                                 ))}
                               </div>
@@ -583,6 +620,14 @@ export default function AttendancePage() {
         employeeName={historyRow ? `${historyRow.employee.firstName} ${historyRow.employee.lastName}` : ""}
         date={historyRow?.date ?? TODAY_ISO}
         audits={historyRow?.record?.audits}
+      />
+
+      {/* Late Arrival Review & Deduction Dialog */}
+      <LateReviewDialog
+        open={Boolean(lateReviewRecord)}
+        onOpenChange={(o) => !o && setLateReviewRecord(null)}
+        record={lateReviewRecord}
+        onSuccess={loadDbData}
       />
     </AdminShell>
   )
