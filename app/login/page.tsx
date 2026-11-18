@@ -480,9 +480,15 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          RotaBeat Attendance &amp; Workforce Management System.
-        </p>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>RotaBeat Workforce System</span>
+          <a
+            href="/privacy-policy"
+            className="hover:text-indigo-600 dark:hover:text-indigo-400 underline transition-colors"
+          >
+            Privacy Policy
+          </a>
+        </div>
       </div>
 
       <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-[#4F46E5] via-[#4338CA] to-[#312E81] p-12 text-white lg:flex shadow-2xl">
@@ -529,7 +535,13 @@ export default function LoginPage() {
 
         <div className="relative z-10 flex items-center justify-between text-xs text-indigo-200/80 border-t border-white/10 pt-4">
           <span>RotaBeat Platform</span>
-          <span>Fast · Accurate · Compliant</span>
+          <div className="flex items-center gap-2">
+            <a href="/privacy-policy" className="hover:text-white underline transition-colors">
+              Privacy Policy
+            </a>
+            <span>·</span>
+            <span>Fast · Accurate · Compliant</span>
+          </div>
         </div>
       </div>
 
