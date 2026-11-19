@@ -131,6 +131,7 @@ type Action =
     shiftId?: string
     events: ClockEvent[]
     exceptions: AttendanceRecord["exceptions"]
+    status?: AttendanceRecord["status"]
     reason: string
     actorName: string
     markAbsent?: boolean
@@ -454,7 +455,7 @@ function reducer(state: AppState, action: Action): AppState {
                 ...a,
                 events: action.events,
                 exceptions: action.exceptions,
-                status: "corrected",
+                status: action.status ?? "corrected",
                 correctionReason: action.reason,
                 correctedBy: action.actorName,
                 correctedAt: DEMO_NOW.toISOString(),
@@ -483,7 +484,7 @@ function reducer(state: AppState, action: Action): AppState {
         shiftId: action.shiftId,
         events: action.events,
         exceptions: action.exceptions,
-        status: "corrected",
+        status: action.status ?? "corrected",
         correctionReason: action.reason,
         correctedBy: action.actorName,
         correctedAt: DEMO_NOW.toISOString(),

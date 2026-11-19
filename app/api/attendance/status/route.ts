@@ -66,7 +66,11 @@ export async function GET(request: Request) {
       )
     }
 
-    const dateIso = new Date().toLocaleDateString("en-CA")
+    const clientTimeParam = searchParams.get("clientTime")
+    const clientDateParam = searchParams.get("clientDate")
+    const dateIso = (clientDateParam && /^\d{4}-\d{2}-\d{2}$/.test(clientDateParam))
+      ? clientDateParam
+      : new Date().toLocaleDateString("en-CA")
 
     // Today's attendance record & clock events
     const attendanceRecord = await prisma.attendanceRecord.findFirst({
@@ -96,14 +100,30 @@ export async function GET(request: Request) {
     let isLate = false
     let lateMinutes = 0
 
-    if (todayShift?.startTime && events.length === 0) {
+    if (todayShift?.startTime) {
       const [h, m] = todayShift.startTime.split(":").map(Number)
       const shiftStartMins = (h || 0) * 60 + (m || 0)
-      const nowObj = new Date()
-      const nowMins = nowObj.getHours() * 60 + nowObj.getMinutes()
-      if (nowMins > shiftStartMins + 5) {
-        isLate = true
-        lateMinutes = Math.max(0, nowMins - shiftStartMins)
+
+      if (events.length === 0) {
+        let nowMins = new Date().getHours() * 60 + new Date().getMinutes()
+        if (clientTimeParam && clientTimeParam.includes(":")) {
+          const [cH, cM] = clientTimeParam.split(":").map(Number)
+          if (!isNaN(cH) && !isNaN(cM)) nowMins = cH * 60 + cM
+        }
+        if (nowMins > shiftStartMins + 5) {
+          isLate = true
+          lateMinutes = Math.max(0, nowMins - shiftStartMins)
+        }
+      } else {
+        const firstClockIn = events.find((e) => e.type === "clock_in")
+        if (firstClockIn) {
+          const inD = new Date(firstClockIn.timestamp)
+          const inMins = inD.getHours() * 60 + inD.getMinutes()
+          if (inMins > shiftStartMins + 5) {
+            isLate = true
+            lateMinutes = Math.max(0, inMins - shiftStartMins)
+          }
+        }
       }
     }
 

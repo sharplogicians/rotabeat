@@ -84,6 +84,7 @@ export default function AttendancePage() {
               shiftId: rec.shiftId,
               events: rec.events,
               exceptions: rec.exceptions,
+              status: rec.status,
               reason: rec.correctionReason || "",
               actorName: rec.correctedBy || "System",
             })
@@ -150,7 +151,32 @@ export default function AttendancePage() {
     })
   }, [state.shifts, state.attendance, state.employees, activeSiteId, days])
 
-  const exceptionCount = rows.filter((r) => r.record?.status === "exception").length
+  const isRowLate = React.useCallback((r: Row): { isLate: boolean; minsLate: number } => {
+    const events = r.record?.events || []
+    const clockInEv = events.find((e) => e.type === "clock_in")
+    const matchedShift = r.shift || state.shifts.find((s) => s.employeeId === r.employee.id && s.date === r.date)
+    const shiftStartRaw = matchedShift?.startTime || r.record?.scheduledStartTime
+    if (shiftStartRaw && clockInEv) {
+      const [sH, sM] = shiftStartRaw.split(":").map(Number)
+      const shiftMins = (sH || 0) * 60 + (sM || 0)
+      const inD = new Date(clockInEv.timestamp)
+      const inMins = inD.getHours() * 60 + inD.getMinutes()
+      if (inMins > shiftMins + 5) {
+        return { isLate: true, minsLate: Math.max(0, inMins - shiftMins) }
+      }
+    }
+    return { isLate: false, minsLate: 0 }
+  }, [state.shifts])
+
+  const getRowExceptions = React.useCallback((r: Row): string[] => {
+    const list = new Set<string>(r.record?.exceptions || [])
+    if (isRowLate(r).isLate) {
+      list.add("late_arrival")
+    }
+    return Array.from(list)
+  }, [isRowLate])
+
+  const exceptionCount = rows.filter((r) => r.record?.status === "exception" || getRowExceptions(r).length > 0).length
   const todayCount = rows.filter((r) => r.date === TODAY_ISO).length
 
   // Multi-tier filtering
@@ -158,18 +184,18 @@ export default function AttendancePage() {
     let result = rows
 
     if (tabFilter === "today") result = result.filter((r) => r.date === TODAY_ISO)
-    if (tabFilter === "exceptions") result = result.filter((r) => r.record?.status === "exception")
+    if (tabFilter === "exceptions") result = result.filter((r) => r.record?.status === "exception" || getRowExceptions(r).length > 0)
 
     if (employeeFilter !== "all") {
       result = result.filter((r) => r.employee.id === employeeFilter)
     }
 
     if (exceptionFilter !== "all") {
-      result = result.filter((r) => r.record?.exceptions.includes(exceptionFilter as ExceptionType))
+      result = result.filter((r) => getRowExceptions(r).includes(exceptionFilter))
     }
 
     return result
-  }, [rows, tabFilter, employeeFilter, exceptionFilter])
+  }, [rows, tabFilter, employeeFilter, exceptionFilter, getRowExceptions])
 
   const siteEmployees = React.useMemo(() => {
     const empsFromState = state.employees.filter((e) => e.primarySiteId === activeSiteId)
@@ -476,9 +502,9 @@ export default function AttendancePage() {
                             >
                               {row.record ? attendanceStatusLabel(row.record.status) : "Not started"}
                             </Badge>
-                            {row.record && row.record.exceptions.length > 0 && (
+                            {row.record && getRowExceptions(row).length > 0 && (
                               <div className="flex flex-wrap gap-1">
-                                {row.record.exceptions.map((ex) => (
+                                {getRowExceptions(row).map((ex) => (
                                   <Badge
                                     key={ex}
                                     variant="outline"
@@ -491,12 +517,7 @@ export default function AttendancePage() {
                                       if (ex === "late_arrival") {
                                         const firstClockIn = events.find((e) => e.type === "clock_in")
                                         const shiftStartRaw = matchedShift?.startTime || row.record?.scheduledStartTime
-                                        let minsLate = 0
-                                        if (shiftStartRaw && firstClockIn) {
-                                          const [sH, sM] = shiftStartRaw.split(":").map(Number)
-                                          const inD = new Date(firstClockIn.timestamp)
-                                          minsLate = Math.max(0, inD.getHours() * 60 + inD.getMinutes() - ((sH || 0) * 60 + (sM || 0)))
-                                        }
+                                        const lateInfo = isRowLate(row)
                                         const clockInTimeStr = clockInEv ? formatTimestamp12(clockInEv.timestamp) : clockIn
                                         setLateReviewRecord({
                                           id: row.record!.id,
@@ -506,7 +527,7 @@ export default function AttendancePage() {
                                           scheduledStartTime: shiftStartRaw,
                                           scheduledEndTime: matchedShift?.endTime || row.record?.scheduledEndTime,
                                           actualClockInTime: clockInTimeStr !== "—" ? clockInTimeStr : "Late",
-                                          lateMinutes: minsLate,
+                                          lateMinutes: lateInfo.minsLate || 1,
                                           hourlyRate: row.employee.hourlyRate || 10,
                                           siteId: activeSiteId || row.employee.primarySiteId,
                                           siteName: site?.name || "Site",

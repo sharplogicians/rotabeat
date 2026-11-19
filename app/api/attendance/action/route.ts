@@ -30,7 +30,11 @@ export async function POST(request: Request) {
       clientType,
       faceMatchScore,
       faceVerified,
+      clientTime,
+      clientDate,
     } = body
+
+    const effectiveDateIso = (clientDate && /^\d{4}-\d{2}-\d{2}$/.test(clientDate)) ? clientDate : dateIso
 
     const eventSource = (source || clientType || "web").toLowerCase()
     const isAppRequest =
@@ -286,7 +290,7 @@ export async function POST(request: Request) {
     let attendanceRecord = await prisma.attendanceRecord.findFirst({
       where: {
         employeeId: employee.id,
-        date: dateIso,
+        date: effectiveDateIso,
       },
       include: {
         events: true,
@@ -322,14 +326,20 @@ export async function POST(request: Request) {
       scheduledShift = await prisma.shift.findFirst({
         where: {
           employeeId: employee.id,
-          date: dateIso,
+          date: effectiveDateIso,
         },
       })
 
       if (scheduledShift && scheduledShift.startTime) {
         const [sH, sM] = scheduledShift.startTime.split(":").map(Number)
         const shiftStartMins = (sH || 0) * 60 + (sM || 0)
-        const nowMins = serverDateObj.getHours() * 60 + serverDateObj.getMinutes()
+        let nowMins = serverDateObj.getHours() * 60 + serverDateObj.getMinutes()
+        if (clientTime && typeof clientTime === "string" && clientTime.includes(":")) {
+          const [cH, cM] = clientTime.split(":").map(Number)
+          if (!isNaN(cH) && !isNaN(cM)) {
+            nowMins = cH * 60 + cM
+          }
+        }
 
         // Fetch org settings for late threshold (default 5 mins)
         const orgSettings = await prisma.orgSettings.findFirst({
@@ -376,7 +386,7 @@ export async function POST(request: Request) {
         scheduledShift = await prisma.shift.findFirst({
           where: {
             employeeId: employee.id,
-            date: dateIso,
+            date: effectiveDateIso,
           },
         })
       }
@@ -387,7 +397,7 @@ export async function POST(request: Request) {
         data: {
           employeeId: employee.id,
           siteId: targetSiteId,
-          date: dateIso,
+          date: effectiveDateIso,
           shiftId: scheduledShift?.id || null,
           scheduledStartTime: scheduledShift?.startTime || null,
           scheduledEndTime: scheduledShift?.endTime || null,
@@ -523,10 +533,14 @@ export async function POST(request: Request) {
 
       if (shift && shift.startTime) {
         const [schedHours, schedMins] = shift.startTime.split(":").map(Number)
-        const clockHours = serverDateObj.getHours()
-        const clockMins = serverDateObj.getMinutes()
+        let clockTotalMins = serverDateObj.getHours() * 60 + serverDateObj.getMinutes()
+        if (clientTime && typeof clientTime === "string" && clientTime.includes(":")) {
+          const [cH, cM] = clientTime.split(":").map(Number)
+          if (!isNaN(cH) && !isNaN(cM)) {
+            clockTotalMins = cH * 60 + cM
+          }
+        }
         const schedTotalMins = schedHours * 60 + schedMins
-        const clockTotalMins = clockHours * 60 + clockMins
         const lateMins = clockTotalMins - schedTotalMins
 
         if (lateMins > lateThresholdMinutes) {

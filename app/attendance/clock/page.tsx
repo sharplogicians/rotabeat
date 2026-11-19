@@ -141,7 +141,9 @@ export default function EmployeeClockPage() {
     if (!empId) return
     setFetchingStatus(true)
     try {
-      const res = await fetch(apiUrl(`/api/attendance/status?employeeId=${empId}`))
+      const now = new Date()
+      const clientTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+      const res = await fetch(apiUrl(`/api/attendance/status?employeeId=${empId}&clientTime=${clientTime}&clientDate=${TODAY_ISO}`))
       if (res.ok) {
         const json = await res.json()
         if (json.success) {

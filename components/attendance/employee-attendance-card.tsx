@@ -156,18 +156,23 @@ export function EmployeeAttendanceCard({
   }, [events])
 
   const isLateArrival = React.useMemo(() => {
-    if (events.length > 0) return false
-    if (todayShift?.startTime) {
-      const [h, m] = todayShift.startTime.split(":").map(Number)
-      if (!isNaN(h) && !isNaN(m)) {
-        const now = new Date()
-        const nowMins = now.getHours() * 60 + now.getMinutes()
-        const shiftMins = h * 60 + m
-        return nowMins > shiftMins + 5
-      }
+    if (!todayShift?.startTime) return false
+    const [h, m] = todayShift.startTime.split(":").map(Number)
+    if (isNaN(h) || isNaN(m)) return false
+    const shiftMins = h * 60 + m
+
+    const firstClockIn = events.find((e) => e.type === "clock_in")
+    if (firstClockIn) {
+      const inD = new Date(firstClockIn.timestamp)
+      const inMins = inD.getHours() * 60 + inD.getMinutes()
+      return inMins > shiftMins + 5
     }
-    return false
-  }, [events.length, todayShift?.startTime])
+
+    // Not yet clocked in: compare current local time
+    const now = new Date()
+    const nowMins = now.getHours() * 60 + now.getMinutes()
+    return nowMins > shiftMins + 5
+  }, [events, todayShift?.startTime])
 
   const workedTotals = React.useMemo(() => {
     return computeWorkedTotals(
@@ -223,6 +228,8 @@ export function EmployeeAttendanceCard({
     setErrorMsg(null)
 
     try {
+      const now = new Date()
+      const clientTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
       const res = await fetch(apiUrl("/api/attendance/action"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,6 +241,8 @@ export function EmployeeAttendanceCard({
           faceMatchScore: typeof matchScore === "number" ? matchScore : null,
           faceVerified: Boolean(faceVerified),
           source: "web",
+          clientTime,
+          clientDate: TODAY_ISO,
         }),
       })
 
