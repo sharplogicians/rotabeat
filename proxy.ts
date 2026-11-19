@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { getSessionFromRequest, SESSION_COOKIE_NAME } from "@/lib/auth"
+import { getSessionFromRequest } from "@/lib/auth"
 import { apiUrl } from "@/lib/api"
 
 // Routes that do NOT require authentication
 const PUBLIC_ROUTES = [
+  "/",
+  "/privacy",
+  "/privacy-policy",
+  "/terms",
+  "/terms-of-service",
   "/api/auth/login",
   "/api/auth/reset-password",
   "/api/audit",
@@ -34,15 +39,20 @@ const PROTECTED_PAGE_PREFIXES = [
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow public routes through
+  // 1. Allow root landing page exactly
+  if (pathname === "/") {
+    return NextResponse.next()
+  }
+
+  // 2. Allow public routes through
   if (
-    PUBLIC_ROUTES.some((route) => pathname.startsWith(route)) ||
+    PUBLIC_ROUTES.some((route) => route !== "/" && pathname.startsWith(route)) ||
     (request.method === "GET" && pathname.startsWith("/api/locations"))
   ) {
     return NextResponse.next()
   }
 
-  // Allow static files and public assets
+  // 3. Allow static files and public assets
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -105,10 +115,14 @@ export function proxy(request: NextRequest) {
   })
 }
 
+export default proxy
+
 export const config = {
   matcher: [
     // Match all API routes except auth login
     "/api/:path*",
+    // Match root landing page
+    "/",
     // Match all protected pages
     "/dashboard/:path*",
     "/employees/:path*",
