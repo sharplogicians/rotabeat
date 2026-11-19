@@ -65,6 +65,42 @@ export async function GET(request: Request) {
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     })
 
+    const recordIds = records.map((r) => r.id)
+    const empIds = [...new Set(records.map((r) => r.employeeId))]
+    const dates = [...new Set(records.map((r) => r.date))]
+
+    // Find any warnings or adjustments associated with these records/employees
+    const [warnings, adjustments] = await Promise.all([
+      prisma.employeeWarning.findMany({
+        where: {
+          OR: [
+            { attendanceRecordId: { in: recordIds } },
+            { employeeId: { in: empIds }, date: { in: dates } },
+          ],
+        },
+      }),
+      prisma.payrollAdjustment.findMany({
+        where: {
+          OR: [
+            { attendanceRecordId: { in: recordIds } },
+            { employeeId: { in: empIds }, date: { in: dates } },
+          ],
+        },
+      }),
+    ])
+
+    const warningMap = new Map<string, string>()
+    warnings.forEach((w) => {
+      if (w.attendanceRecordId) warningMap.set(w.attendanceRecordId, w.reason)
+      warningMap.set(`${w.employeeId}_${w.date}`, w.reason)
+    })
+
+    const adjMap = new Map<string, any>()
+    adjustments.forEach((a) => {
+      if (a.attendanceRecordId) adjMap.set(a.attendanceRecordId, a)
+      adjMap.set(`${a.employeeId}_${a.date}`, a)
+    })
+
     // Map records with calculated values and filter by exception if specified
     const formatted = records.map((record) => {
       const parsedExceptions: string[] = JSON.parse(record.exceptionsJson || "[]")
@@ -77,6 +113,40 @@ export async function GET(request: Request) {
       }))
 
       const totals = computeWorkedTotals(events)
+
+      const key = `${record.employeeId}_${record.date}`
+      const hasWarning = warningMap.has(record.id) || warningMap.has(key)
+      const adj = adjMap.get(record.id) || adjMap.get(key)
+      const hasApprovedAdj = adj && adj.status === "approved"
+      const hasWaivedAdj = adj && adj.status === "rejected"
+
+      let effectiveStatus = record.status
+      let effectiveReason = record.correctionReason
+      let effectiveExceptions = parsedExceptions
+
+      if (hasWarning || hasApprovedAdj || hasWaivedAdj || record.status === "reviewed") {
+        effectiveStatus = "reviewed"
+        effectiveExceptions = effectiveExceptions.filter((e) => e !== "late_arrival")
+        if (!effectiveReason) {
+          if (hasWarning) {
+            effectiveReason = `Warning issued: "${warningMap.get(record.id) || warningMap.get(key)}"`
+          } else if (hasApprovedAdj) {
+            effectiveReason = `Late deduction recorded: £${Number(adj.deductionAmount || 0).toFixed(2)}`
+          } else if (hasWaivedAdj) {
+            effectiveReason = `Late exception approved. Deduction waived.`
+          }
+        }
+
+        if (record.status !== "reviewed") {
+          prisma.attendanceRecord.update({
+            where: { id: record.id },
+            data: {
+              status: "reviewed",
+              correctionReason: effectiveReason,
+            },
+          }).catch(() => {})
+        }
+      }
 
       return {
         id: record.id,
@@ -92,9 +162,9 @@ export async function GET(request: Request) {
         grossMinutes: record.grossMinutes || totals.grossMinutes,
         totalBreakMinutes: record.totalBreakMinutes || totals.breakMinutes,
         workedMinutes: record.workedMinutes || totals.payableMinutes,
-        status: record.status,
-        exceptions: parsedExceptions,
-        correctionReason: record.correctionReason,
+        status: effectiveStatus,
+        exceptions: effectiveExceptions,
+        correctionReason: effectiveReason,
         correctedBy: record.correctedBy,
         correctedAt: record.correctedAt,
         createdAt: record.createdAt,

@@ -58,8 +58,8 @@ export async function POST(request: Request) {
       typeof hourlyRate === "number" && hourlyRate > 0
         ? hourlyRate
         : employee.payType === "hourly"
-        ? Number(employee.hourlyRate) || 0
-        : (Number(employee.salaryAnnual) || 0) / (52 * 40)
+          ? Number(employee.hourlyRate) || 0
+          : (Number(employee.salaryAnnual) || 0) / (52 * 40)
 
     // Calculate deduction amount
     const deductionAmount = Number(((minsLate / 60) * rate).toFixed(2))
@@ -67,6 +67,62 @@ export async function POST(request: Request) {
     // Safe site ID
     const safeSiteId = siteId || employee.primarySiteId || employee.primarySite?.id || ""
     const safeSiteName = siteName || employee.primarySite?.name || "Site"
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Duplicate Review Check — prevent performing review more than once per shift
+    // ─────────────────────────────────────────────────────────────────────────────
+    const existingRec = attendanceRecordId
+      ? await prisma.attendanceRecord.findUnique({ where: { id: attendanceRecordId } })
+      : await prisma.attendanceRecord.findFirst({ where: { employeeId, date: dateIso } })
+
+    if (existingRec && existingRec.status === "reviewed") {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "ALREADY_REVIEWED",
+          message: `This late arrival has already been reviewed for ${employeeName} on ${dateIso}. It cannot be performed again.`,
+        },
+        { status: 409 }
+      )
+    }
+
+    const existingApprovedAdj = await prisma.payrollAdjustment.findFirst({
+      where: {
+        OR: [
+          ...(attendanceRecordId ? [{ attendanceRecordId, status: "approved" }] : []),
+          { employeeId, date: dateIso, status: "approved" },
+        ],
+      },
+    })
+    if (existingApprovedAdj) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "ALREADY_REVIEWED",
+          message: `A late arrival payroll deduction has already been recorded for ${employeeName} on ${dateIso}. It cannot be performed again.`,
+        },
+        { status: 409 }
+      )
+    }
+
+    const existingWarning = await prisma.employeeWarning.findFirst({
+      where: {
+        OR: [
+          ...(attendanceRecordId ? [{ attendanceRecordId }] : []),
+          { employeeId, date: dateIso },
+        ],
+      },
+    })
+    if (existingWarning) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "ALREADY_REVIEWED",
+          message: `A formal warning has already been issued for ${employeeName} on ${dateIso}. It cannot be performed again.`,
+        },
+        { status: 409 }
+      )
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 1. ACTION: "record_late" — Mark late AND DEDUCT SALARY
@@ -120,6 +176,16 @@ export async function POST(request: Request) {
       if (attendanceRecordId) {
         await prisma.attendanceRecord.update({
           where: { id: attendanceRecordId },
+          data: {
+            status: "reviewed",
+            correctionReason: `Manager recorded late arrival (${minsLate} mins late). Deduction: £${deductionAmount.toFixed(2)}.`,
+            correctedBy: managerName,
+            correctedAt: nowIso,
+          },
+        }).catch((err) => console.warn("Could not update attendanceRecord status:", err.message))
+      } else {
+        await prisma.attendanceRecord.updateMany({
+          where: { employeeId, date: dateIso },
           data: {
             status: "reviewed",
             correctionReason: `Manager recorded late arrival (${minsLate} mins late). Deduction: £${deductionAmount.toFixed(2)}.`,
@@ -236,6 +302,16 @@ export async function POST(request: Request) {
             correctedAt: nowIso,
           },
         }).catch((err) => console.warn("Could not update attendanceRecord status:", err.message))
+      } else {
+        await prisma.attendanceRecord.updateMany({
+          where: { employeeId, date: dateIso },
+          data: {
+            status: "reviewed",
+            correctionReason: `Warning issued by ${managerName}: "${reasonText}". No salary deduction.`,
+            correctedBy: managerName,
+            correctedAt: nowIso,
+          },
+        }).catch((err) => console.warn("Could not update attendanceRecord status:", err.message))
       }
 
       // Send IN-APP NOTIFICATION to employee
@@ -343,7 +419,31 @@ export async function POST(request: Request) {
           await prisma.attendanceRecord.update({
             where: { id: attendanceRecordId },
             data: {
-              status: filtered.length > 0 ? "exception" : "normal",
+              status: "reviewed",
+              exceptionsJson: JSON.stringify(filtered),
+              correctionReason: `Exception approved by ${managerName}: "${noteText}". No salary deducted.`,
+              correctedBy: managerName,
+              correctedAt: nowIso,
+            },
+          })
+        }
+      } else {
+        const attRec = await prisma.attendanceRecord.findFirst({
+          where: { employeeId, date: dateIso },
+        })
+        if (attRec) {
+          let exceptions: string[] = []
+          try {
+            exceptions = JSON.parse(attRec.exceptionsJson || "[]")
+          } catch {
+            exceptions = []
+          }
+          const filtered = exceptions.filter((e) => e !== "late_arrival" && e !== "absent")
+
+          await prisma.attendanceRecord.update({
+            where: { id: attRec.id },
+            data: {
+              status: "reviewed",
               exceptionsJson: JSON.stringify(filtered),
               correctionReason: `Exception approved by ${managerName}: "${noteText}". No salary deducted.`,
               correctedBy: managerName,

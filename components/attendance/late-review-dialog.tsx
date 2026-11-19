@@ -38,6 +38,8 @@ export interface LateReviewDialogProps {
     hourlyRate?: number
     siteId?: string
     siteName?: string
+    status?: string | null
+    correctionReason?: string | null
   } | null
   onSuccess?: () => void
 }
@@ -57,12 +59,13 @@ export function LateReviewDialog({
 
   if (!record) return null
 
+  const isAlreadyReviewed = record.status === "reviewed"
   const lateMins = record.lateMinutes || 0
   const rate = record.hourlyRate || 10
   const deduction = Number(((lateMins / 60) * rate).toFixed(2))
 
   async function handleSubmit() {
-    if (!record) return
+    if (!record || isAlreadyReviewed) return
     if (selectedAction === "issue_warning" && !comment.trim()) {
       toast.error("Please enter a warning reason / comment for the employee.")
       return
@@ -88,14 +91,18 @@ export function LateReviewDialog({
 
       const data = await res.json()
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to process decision.")
+        toast.error(data.message || "Failed to process decision.")
+        if (data.code === "ALREADY_REVIEWED" || res.status === 409) {
+          onSuccess?.()
+          onOpenChange(false)
+        }
+        return
       }
 
       toast.success(data.message || "Decision processed successfully.")
       onOpenChange(false)
       onSuccess?.()
     } catch (err: any) {
-      console.error(err)
       toast.error(err.message || "Failed to submit review.")
     } finally {
       setLoading(false)
@@ -120,6 +127,19 @@ export function LateReviewDialog({
             </div>
           </div>
         </DialogHeader>
+
+        {isAlreadyReviewed && (
+          <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-xs text-purple-700 dark:text-purple-300 flex items-start gap-2">
+            <CheckCircle2 className="size-4 shrink-0 text-purple-600 mt-0.5" />
+            <div className="flex flex-col gap-0.5">
+              <span className="font-semibold">Late Review Completed</span>
+              <span>
+                {record.correctionReason || "A manager decision has already been performed for this shift."}
+                {" "}This record is locked and cannot be reviewed again.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Shift & Lateness Summary */}
         <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-xs">
@@ -187,12 +207,13 @@ export function LateReviewDialog({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
             <button
               type="button"
+              disabled={isAlreadyReviewed}
               onClick={() => setSelectedAction("record_late")}
               className={`p-2.5 rounded-lg border text-left transition-colors flex flex-col gap-1 ${
                 selectedAction === "record_late"
                   ? "border-primary bg-primary/5 font-semibold text-primary"
                   : "border-border hover:bg-muted/50"
-              }`}
+              } ${isAlreadyReviewed ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               <div className="flex items-center gap-1.5">
                 <Clock className="size-3.5" />
@@ -205,12 +226,13 @@ export function LateReviewDialog({
 
             <button
               type="button"
+              disabled={isAlreadyReviewed}
               onClick={() => setSelectedAction("issue_warning")}
               className={`p-2.5 rounded-lg border text-left transition-colors flex flex-col gap-1 ${
                 selectedAction === "issue_warning"
                   ? "border-destructive bg-destructive/5 font-semibold text-destructive"
                   : "border-border hover:bg-muted/50"
-              }`}
+              } ${isAlreadyReviewed ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               <div className="flex items-center gap-1.5">
                 <ShieldAlert className="size-3.5" />
@@ -223,12 +245,13 @@ export function LateReviewDialog({
 
             <button
               type="button"
+              disabled={isAlreadyReviewed}
               onClick={() => setSelectedAction("approve_exception")}
               className={`p-2.5 rounded-lg border text-left transition-colors flex flex-col gap-1 ${
                 selectedAction === "approve_exception"
                   ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 font-semibold text-emerald-700 dark:text-emerald-300"
                   : "border-border hover:bg-muted/50"
-              }`}
+              } ${isAlreadyReviewed ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               <div className="flex items-center gap-1.5">
                 <CheckCircle2 className="size-3.5" />
@@ -249,8 +272,11 @@ export function LateReviewDialog({
               : "Manager Note / Reason (Optional)"}
           </label>
           <Textarea
+            disabled={isAlreadyReviewed}
             placeholder={
-              selectedAction === "issue_warning"
+              isAlreadyReviewed
+                ? "This review has already been finalized."
+                : selectedAction === "issue_warning"
                 ? "e.g. Third consecutive late arrival this month. Advised to arrive on time."
                 : selectedAction === "approve_exception"
                 ? "e.g. Train delay verified on public transport board."
@@ -270,15 +296,17 @@ export function LateReviewDialog({
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
-            Cancel
+            {isAlreadyReviewed ? "Close" : "Cancel"}
           </Button>
           <Button
             type="button"
             size="sm"
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || isAlreadyReviewed}
             className={
-              selectedAction === "issue_warning"
+              isAlreadyReviewed
+                ? "bg-slate-400 text-white cursor-not-allowed"
+                : selectedAction === "issue_warning"
                 ? "bg-destructive hover:bg-destructive/90 text-white"
                 : selectedAction === "approve_exception"
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -287,6 +315,8 @@ export function LateReviewDialog({
           >
             {loading
               ? "Submitting…"
+              : isAlreadyReviewed
+              ? "Already Reviewed"
               : selectedAction === "issue_warning"
               ? "Issue Warning (No Deduction)"
               : selectedAction === "approve_exception"

@@ -152,6 +152,10 @@ export default function AttendancePage() {
   }, [state.shifts, state.attendance, state.employees, activeSiteId, days])
 
   const isRowLate = React.useCallback((r: Row): { isLate: boolean; minsLate: number } => {
+    // If this record has already been reviewed by a manager, it is no longer an open/pending late arrival
+    if (r.record?.status === "reviewed") {
+      return { isLate: false, minsLate: 0 }
+    }
     const events = r.record?.events || []
     const clockInEv = events.find((e) => e.type === "clock_in")
     const matchedShift = r.shift || state.shifts.find((s) => s.employeeId === r.employee.id && s.date === r.date)
@@ -169,6 +173,10 @@ export default function AttendancePage() {
   }, [state.shifts])
 
   const getRowExceptions = React.useCallback((r: Row): string[] => {
+    if (r.record?.status === "reviewed") {
+      const list = new Set<string>((r.record?.exceptions || []).filter((e) => e !== "late_arrival"))
+      return Array.from(list)
+    }
     const list = new Set<string>(r.record?.exceptions || [])
     if (isRowLate(r).isLate) {
       list.add("late_arrival")
@@ -195,465 +203,467 @@ export default function AttendancePage() {
     }
 
     return result
-}, [rows, tabFilter, employeeFilter, exceptionFilter, getRowExceptions])
+  }, [rows, tabFilter, employeeFilter, exceptionFilter, getRowExceptions])
 
-const siteEmployees = React.useMemo(() => {
-  const empsFromState = state.employees.filter((e) => e.primarySiteId === activeSiteId)
-  const empsFromRows = rows.map((r) => r.employee).filter(Boolean)
-  const combined = [...empsFromState, ...empsFromRows]
-  const seen = new Set<string>()
-  const unique: Employee[] = []
-  for (const e of combined) {
-    if (!seen.has(e.id)) {
-      seen.add(e.id)
-      unique.push(e)
+  const siteEmployees = React.useMemo(() => {
+    const empsFromState = state.employees.filter((e) => e.primarySiteId === activeSiteId)
+    const empsFromRows = rows.map((r) => r.employee).filter(Boolean)
+    const combined = [...empsFromState, ...empsFromRows]
+    const seen = new Set<string>()
+    const unique: Employee[] = []
+    for (const e of combined) {
+      if (!seen.has(e.id)) {
+        seen.add(e.id)
+        unique.push(e)
+      }
     }
+    return unique.sort((a, b) => a.firstName.localeCompare(b.firstName))
+  }, [state.employees, activeSiteId, rows])
+
+  const employeeSelectItems = React.useMemo(() => {
+    return [
+      { value: "all", label: "All Employees" },
+      ...siteEmployees.map((e) => ({
+        value: e.id,
+        label: `${e.firstName} ${e.lastName}`,
+      })),
+    ]
+  }, [siteEmployees])
+
+  const selectedEmployeeLabel = React.useMemo(() => {
+    if (employeeFilter === "all") return "All Employees"
+    const emp = siteEmployees.find((e) => e.id === employeeFilter) || state.employees.find((e) => e.id === employeeFilter)
+    return emp ? `${emp.firstName} ${emp.lastName}` : "All Employees"
+  }, [employeeFilter, siteEmployees, state.employees])
+
+  const EXCEPTION_LABELS: Record<string, string> = {
+    all: "All Exceptions",
+    late_arrival: "Late Arrival",
+    early_departure: "Early Departure",
+    missing_clock_out: "Missing Clock-Out",
+    missing_break_end: "Missing Break End",
   }
-  return unique.sort((a, b) => a.firstName.localeCompare(b.firstName))
-}, [state.employees, activeSiteId, rows])
 
-const employeeSelectItems = React.useMemo(() => {
-  return [
-    { value: "all", label: "All Employees" },
-    ...siteEmployees.map((e) => ({
-      value: e.id,
-      label: `${e.firstName} ${e.lastName}`,
-    })),
+  const EXCEPTION_SELECT_ITEMS = [
+    { value: "all", label: "All Exceptions" },
+    { value: "late_arrival", label: "Late Arrival" },
+    { value: "early_departure", label: "Early Departure" },
+    { value: "missing_clock_out", label: "Missing Clock-Out" },
+    { value: "missing_break_end", label: "Missing Break End" },
   ]
-}, [siteEmployees])
 
-const selectedEmployeeLabel = React.useMemo(() => {
-  if (employeeFilter === "all") return "All Employees"
-  const emp = siteEmployees.find((e) => e.id === employeeFilter) || state.employees.find((e) => e.id === employeeFilter)
-  return emp ? `${emp.firstName} ${emp.lastName}` : "All Employees"
-}, [employeeFilter, siteEmployees, state.employees])
+  if (state.sites.length === 0) {
+    return (
+      <AdminShell crumbs={[{ label: "Attendance" }]}>
+        <Empty className="py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Clock className="text-muted-foreground" />
+            </EmptyMedia>
+            <EmptyTitle>Location Required</EmptyTitle>
+            <EmptyDescription>
+              No locations have been added yet. Please add a business location first before recording or reviewing attendance.
+            </EmptyDescription>
+            {(state.role === "business_owner" || state.role === "head_office") && (
+              <div className="pt-2">
+                <Button render={<Link href="/sites" />}>
+                  Add a Location
+                </Button>
+              </div>
+            )}
+          </EmptyHeader>
+        </Empty>
+      </AdminShell>
+    )
+  }
 
-const EXCEPTION_LABELS: Record<string, string> = {
-  all: "All Exceptions",
-  late_arrival: "Late Arrival",
-  early_departure: "Early Departure",
-  missing_clock_out: "Missing Clock-Out",
-  missing_break_end: "Missing Break End",
-}
-
-const EXCEPTION_SELECT_ITEMS = [
-  { value: "all", label: "All Exceptions" },
-  { value: "late_arrival", label: "Late Arrival" },
-  { value: "early_departure", label: "Early Departure" },
-  { value: "missing_clock_out", label: "Missing Clock-Out" },
-  { value: "missing_break_end", label: "Missing Break End" },
-]
-
-if (state.sites.length === 0) {
   return (
     <AdminShell crumbs={[{ label: "Attendance" }]}>
-      <Empty className="py-16">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Clock className="text-muted-foreground" />
-          </EmptyMedia>
-          <EmptyTitle>Location Required</EmptyTitle>
-          <EmptyDescription>
-            No locations have been added yet. Please add a business location first before recording or reviewing attendance.
-          </EmptyDescription>
-          {(state.role === "business_owner" || state.role === "head_office") && (
-            <div className="pt-2">
-              <Button render={<Link href="/sites" />}>
-                Add a Location
-              </Button>
-            </div>
-          )}
-        </EmptyHeader>
-      </Empty>
-    </AdminShell>
-  )
-}
-
-return (
-  <AdminShell crumbs={[{ label: "Attendance" }]}>
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold font-heading tracking-tight text-balance">Attendance &amp; timesheets</h1>
-          <p className="text-sm text-muted-foreground">
-            {site?.name} — Convert clock events into daily attendance records with schedule comparison, worked calculations, and audit trail.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => setAddDialogOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Add Attendance
-          </Button>
-          <Link href="/attendance/clock">
-            <Button variant="outline" className="font-semibold shadow-sm">
-              <Clock className="w-4 h-4 mr-1.5 text-emerald-600" />
-              Clock View
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-semibold font-heading tracking-tight text-balance">Attendance &amp; timesheets</h1>
+            <p className="text-sm text-muted-foreground">
+              {site?.name} — Convert clock events into daily attendance records with schedule comparison, worked calculations, and audit trail.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setAddDialogOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Add Attendance
             </Button>
-          </Link>
+            <Link href="/attendance/clock">
+              <Button variant="outline" className="font-semibold shadow-sm">
+                <Clock className="w-4 h-4 mr-1.5 text-emerald-600" />
+                Clock View
+              </Button>
+            </Link>
+          </div>
         </div>
-      </div>
 
-      {/* Filters Toolbar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card p-3 rounded-lg border shadow-xs">
-        <Tabs value={tabFilter} onValueChange={(v) => v && setTabFilter(v as "all" | "today" | "exceptions")}>
-          <TabsList variant="line">
-            <TabsTrigger value="all">All Records ({rows.length})</TabsTrigger>
-            <TabsTrigger value="today">Today ({todayCount})</TabsTrigger>
-            <TabsTrigger value="exceptions">Exceptions ({exceptionCount})</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Filters Toolbar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card p-3 rounded-lg border shadow-xs">
+          <Tabs value={tabFilter} onValueChange={(v) => v && setTabFilter(v as "all" | "today" | "exceptions")}>
+            <TabsList variant="line">
+              <TabsTrigger value="all">All Records ({rows.length})</TabsTrigger>
+              <TabsTrigger value="today">Today ({todayCount})</TabsTrigger>
+              <TabsTrigger value="exceptions">Exceptions ({exceptionCount})</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Filter className="w-4 h-4 text-muted-foreground hidden sm:block" />
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground hidden sm:block" />
 
-          {/* Employee Filter */}
-          <Select
-            items={employeeSelectItems}
-            value={employeeFilter}
-            onValueChange={(val) => val && setEmployeeFilter(val)}
-          >
-            <SelectTrigger className="w-[170px] h-8 text-xs">
-              <SelectValue placeholder="All Employees">
-                {selectedEmployeeLabel}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Employees</SelectItem>
-              {siteEmployees.map((emp) => (
-                <SelectItem key={emp.id} value={emp.id}>
-                  {emp.firstName} {emp.lastName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {/* Employee Filter */}
+            <Select
+              items={employeeSelectItems}
+              value={employeeFilter}
+              onValueChange={(val) => val && setEmployeeFilter(val)}
+            >
+              <SelectTrigger className="w-[170px] h-8 text-xs">
+                <SelectValue placeholder="All Employees">
+                  {selectedEmployeeLabel}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Employees</SelectItem>
+                {siteEmployees.map((emp) => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {emp.firstName} {emp.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-          {/* Exception Type Filter */}
-          <Select
-            items={EXCEPTION_SELECT_ITEMS}
-            value={exceptionFilter}
-            onValueChange={(val) => val && setExceptionFilter(val)}
-          >
-            <SelectTrigger className="w-[170px] h-8 text-xs">
-              <SelectValue placeholder="All Exceptions">
-                {EXCEPTION_LABELS[exceptionFilter] || "All Exceptions"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Exceptions</SelectItem>
-              <SelectItem value="late_arrival">Late Arrival</SelectItem>
-              <SelectItem value="early_departure">Early Departure</SelectItem>
-              <SelectItem value="missing_clock_out">Missing Clock-Out</SelectItem>
-              <SelectItem value="missing_break_end">Missing Break End</SelectItem>
-            </SelectContent>
-          </Select>
+            {/* Exception Type Filter */}
+            <Select
+              items={EXCEPTION_SELECT_ITEMS}
+              value={exceptionFilter}
+              onValueChange={(val) => val && setExceptionFilter(val)}
+            >
+              <SelectTrigger className="w-[170px] h-8 text-xs">
+                <SelectValue placeholder="All Exceptions">
+                  {EXCEPTION_LABELS[exceptionFilter] || "All Exceptions"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Exceptions</SelectItem>
+                <SelectItem value="late_arrival">Late Arrival</SelectItem>
+                <SelectItem value="early_departure">Early Departure</SelectItem>
+                <SelectItem value="missing_clock_out">Missing Clock-Out</SelectItem>
+                <SelectItem value="missing_break_end">Missing Break End</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
 
-      <Card className="overflow-hidden">
-        <CardContent className="p-0 overflow-x-auto min-w-0 max-w-full shadow-inner">
-          {visibleRows.length === 0 ? (
-            <Empty className="py-12">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <ClipboardCheck />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {tabFilter === "exceptions"
-                    ? "No open exceptions"
-                    : tabFilter === "today"
-                      ? "No attendance for today"
-                      : "No attendance records match criteria"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {tabFilter === "exceptions"
-                    ? "All employee clock events for this period match the schedule cleanly."
-                    : "Attendance records for this location will appear here as employees clock in or managers manually enter records."}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Shift Start</TableHead>
-                  <TableHead>Clock In</TableHead>
-                  <TableHead>Break Period</TableHead>
-                  <TableHead>Allowed Break</TableHead>
-                  <TableHead>Break Taken</TableHead>
-                  <TableHead>Shift End</TableHead>
-                  <TableHead>Clock Out</TableHead>
-                  <TableHead>Worked</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visibleRows.map((row) => {
-                  const events = row.record?.events || []
-                  const totals = row.record ? computeWorkedTotals(events) : undefined
+        <Card className="overflow-hidden">
+          <CardContent className="p-0 overflow-x-auto min-w-0 max-w-full shadow-inner">
+            {visibleRows.length === 0 ? (
+              <Empty className="py-12">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ClipboardCheck />
+                  </EmptyMedia>
+                  <EmptyTitle>
+                    {tabFilter === "exceptions"
+                      ? "No open exceptions"
+                      : tabFilter === "today"
+                        ? "No attendance for today"
+                        : "No attendance records match criteria"}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {tabFilter === "exceptions"
+                      ? "All employee clock events for this period match the schedule cleanly."
+                      : "Attendance records for this location will appear here as employees clock in or managers manually enter records."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Shift Start</TableHead>
+                    <TableHead>Clock In</TableHead>
+                    <TableHead>Break Period</TableHead>
+                    <TableHead>Allowed Break</TableHead>
+                    <TableHead>Break Taken</TableHead>
+                    <TableHead>Shift End</TableHead>
+                    <TableHead>Clock Out</TableHead>
+                    <TableHead>Worked</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleRows.map((row) => {
+                    const events = row.record?.events || []
+                    const totals = row.record ? computeWorkedTotals(events) : undefined
 
-                  const matchedShift = row.shift || state.shifts.find((s) => s.employeeId === row.employee.id && s.date === row.date)
-                  const shiftStart = matchedShift ? formatTime12(matchedShift.startTime) : (row.record?.scheduledStartTime ? formatTime12(row.record.scheduledStartTime) : "—")
-                  const shiftEnd = matchedShift ? formatTime12(matchedShift.endTime) : (row.record?.scheduledEndTime ? formatTime12(row.record.scheduledEndTime) : "—")
-                  const allowedBreak = matchedShift ? `${matchedShift.unpaidBreakMinutes}m` : "—"
+                    const matchedShift = row.shift || state.shifts.find((s) => s.employeeId === row.employee.id && s.date === row.date)
+                    const shiftStart = matchedShift ? formatTime12(matchedShift.startTime) : (row.record?.scheduledStartTime ? formatTime12(row.record.scheduledStartTime) : "—")
+                    const shiftEnd = matchedShift ? formatTime12(matchedShift.endTime) : (row.record?.scheduledEndTime ? formatTime12(row.record.scheduledEndTime) : "—")
+                    const allowedBreak = matchedShift ? `${matchedShift.unpaidBreakMinutes}m` : "—"
 
-                  const clockIn = totals?.clockInAt ? formatTimestamp12(totals.clockInAt) : "—"
-                  const clockOut = totals?.clockOutAt ? formatTimestamp12(totals.clockOutAt) : "—"
+                    const clockIn = totals?.clockInAt ? formatTimestamp12(totals.clockInAt) : "—"
+                    const clockOut = totals?.clockOutAt ? formatTimestamp12(totals.clockOutAt) : "—"
 
-                  const clockInEv = events.find((e) => e.type === "clock_in")
-                  const clockOutEv = events.slice().reverse().find((e) => e.type === "clock_out")
+                    const clockInEv = events.find((e) => e.type === "clock_in")
+                    const clockOutEv = events.slice().reverse().find((e) => e.type === "clock_out")
 
-                  const breakStartEv = events.find((e) => e.type === "break_start")
-                  const breakEndEv = events.find((e) => e.type === "break_end")
-                  const breakPeriod = breakStartEv
-                    ? `${formatTimestamp12(breakStartEv.timestamp)}–${breakEndEv ? formatTimestamp12(breakEndEv.timestamp) : "..."}`
-                    : "—"
+                    const breakStartEv = events.find((e) => e.type === "break_start")
+                    const breakEndEv = events.find((e) => e.type === "break_end")
+                    const breakPeriod = breakStartEv
+                      ? `${formatTimestamp12(breakStartEv.timestamp)}–${breakEndEv ? formatTimestamp12(breakEndEv.timestamp) : "..."}`
+                      : "—"
 
-                  const breakTakenMins = totals ? totals.breakMinutes : 0
-                  const breakTakenStr = breakTakenMins > 0 ? `${breakTakenMins}m` : "0m"
+                    const breakTakenMins = totals ? totals.breakMinutes : 0
+                    const breakTakenStr = breakTakenMins > 0 ? `${breakTakenMins}m` : "0m"
 
-                  const hours = totals ? (totals.payableMinutes / 60).toFixed(2) : "0.00"
+                    const hours = totals ? (totals.payableMinutes / 60).toFixed(2) : "0.00"
 
-                  return (
-                    <TableRow key={row.key}>
-                      <TableCell className="font-medium">
-                        <div>
-                          <span className="font-semibold text-foreground">
-                            {row.employee.firstName} {row.employee.lastName}
-                          </span>
-                          <span className="block text-xs text-muted-foreground">{row.employee.jobTitle}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground font-medium whitespace-nowrap">
-                        {row.date === TODAY_ISO ? (
-                          <Badge variant="secondary" className="font-semibold text-xs">
-                            Today
-                          </Badge>
-                        ) : (
-                          formatDayMonth(row.date)
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground font-medium">
-                        {shiftStart}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground font-medium">
-                        <div className="flex items-center gap-1.5">
-                          <span>{clockIn}</span>
-                          {clockInEv?.photo && (
-                            <button
-                              type="button"
-                              onClick={() => setDetailsRow(row)}
-                              className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-0.5 rounded transition-colors"
-                              title="Live photo recorded at Clock In. Click Details to view."
-                            >
-                              <Camera className="w-3.5 h-3.5" />
-                            </button>
+                    return (
+                      <TableRow key={row.key}>
+                        <TableCell className="font-medium">
+                          <div>
+                            <span className="font-semibold text-foreground">
+                              {row.employee.firstName} {row.employee.lastName}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">{row.employee.jobTitle}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-medium whitespace-nowrap">
+                          {row.date === TODAY_ISO ? (
+                            <Badge variant="secondary" className="font-semibold text-xs">
+                              Today
+                            </Badge>
+                          ) : (
+                            formatDayMonth(row.date)
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs font-mono whitespace-nowrap">
-                        {breakPeriod}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs font-mono">
-                        {allowedBreak}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs font-mono">
-                        {breakTakenStr}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground font-medium">
-                        {shiftEnd}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground font-medium">
-                        <div className="flex items-center gap-1.5">
-                          <span>{clockOut}</span>
-                          {clockOutEv?.photo && (
-                            <button
-                              type="button"
-                              onClick={() => setDetailsRow(row)}
-                              className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-0.5 rounded transition-colors"
-                              title="Live photo recorded at Clock Out. Click Details to view."
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-medium">
+                          {shiftStart}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-medium">
+                          <div className="flex items-center gap-1.5">
+                            <span>{clockIn}</span>
+                            {clockInEv?.photo && (
+                              <button
+                                type="button"
+                                onClick={() => setDetailsRow(row)}
+                                className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-0.5 rounded transition-colors"
+                                title="Live photo recorded at Clock In. Click Details to view."
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs font-mono whitespace-nowrap">
+                          {breakPeriod}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs font-mono">
+                          {allowedBreak}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs font-mono">
+                          {breakTakenStr}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-medium">
+                          {shiftEnd}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-medium">
+                          <div className="flex items-center gap-1.5">
+                            <span>{clockOut}</span>
+                            {clockOutEv?.photo && (
+                              <button
+                                type="button"
+                                onClick={() => setDetailsRow(row)}
+                                className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-0.5 rounded transition-colors"
+                                title="Live photo recorded at Clock Out. Click Details to view."
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground font-semibold whitespace-nowrap">
+                          {hours} hrs
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant={
+                                row.record?.status === "exception"
+                                  ? "destructive"
+                                  : row.record?.status === "corrected" || row.record?.status === "reviewed"
+                                    ? "secondary"
+                                    : row.record
+                                      ? "default"
+                                      : "outline"
+                              }
+                              className="w-fit whitespace-nowrap"
                             >
-                              <Camera className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground font-semibold whitespace-nowrap">
-                        {hours} hrs
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <Badge
-                            variant={
-                              row.record?.status === "exception"
-                                ? "destructive"
-                                : row.record?.status === "corrected" || row.record?.status === "reviewed"
-                                  ? "secondary"
-                                  : row.record
-                                    ? "default"
-                                    : "outline"
-                            }
-                            className="w-fit whitespace-nowrap"
-                          >
-                            {row.record ? attendanceStatusLabel(row.record.status) : "Not started"}
-                          </Badge>
+                              {row.record ? attendanceStatusLabel(row.record.status) : "Not started"}
+                            </Badge>
                             {
                               row.record && getRowExceptions(row).length > 0 && (
                                 <div className="flex flex-wrap gap-1">
-                                    {
-                                      getRowExceptions(row).map((ex) => (
-                                        <Badge
-                                          key={ex}
-                                          variant="outline"
-                                          className={`text-xs whitespace-nowrap ${ex === "late_arrival"
-                                              ? "cursor-pointer hover:bg-amber-500/15 border-amber-400 text-amber-700 dark:text-amber-400 font-semibold"
-                                              : ""
-                                            }`}
-                                          onClick={() => {
-                                            if (ex === "late_arrival") {
-                                              const firstClockIn = events.find((e) => e.type === "clock_in")
-                                              const shiftStartRaw = matchedShift?.startTime || row.record?.scheduledStartTime
-                                              const lateInfo = isRowLate(row)
-                                              const clockInTimeStr = clockInEv ? formatTimestamp12(clockInEv.timestamp) : clockIn
-                                              setLateReviewRecord({
-                                                id: row.record!.id,
-                                                employeeId: row.employee.id,
-                                                employeeName: `${row.employee.firstName} ${row.employee.lastName}`,
-                                                date: row.date,
-                                                scheduledStartTime: shiftStartRaw,
-                                                scheduledEndTime: matchedShift?.endTime || row.record?.scheduledEndTime,
-                                                actualClockInTime: clockInTimeStr !== "—" ? clockInTimeStr : "Late",
-                                                lateMinutes: lateInfo.minsLate || 1,
-                                                hourlyRate: row.employee.hourlyRate || 10,
-                                                siteId: activeSiteId || row.employee.primarySiteId,
-                                                siteName: site?.name || "Site",
-                                              })
-                                            }
-                                          }}
-                                        >
-                                          {EXCEPTION_LABELS[ex] || ex}
-                                          {ex === "late_arrival" && " ↗"}
-                                        </Badge>
-                                      ))
-                                    }
-                              </div>
+                                  {
+                                    getRowExceptions(row).map((ex) => (
+                                      <Badge
+                                        key={ex}
+                                        variant="outline"
+                                        className={`text-xs whitespace-nowrap ${ex === "late_arrival"
+                                          ? "cursor-pointer hover:bg-amber-500/15 border-amber-400 text-amber-700 dark:text-amber-400 font-semibold"
+                                          : ""
+                                          }`}
+                                        onClick={() => {
+                                          if (ex === "late_arrival") {
+                                            const firstClockIn = events.find((e) => e.type === "clock_in")
+                                            const shiftStartRaw = matchedShift?.startTime || row.record?.scheduledStartTime
+                                            const lateInfo = isRowLate(row)
+                                            const clockInTimeStr = clockInEv ? formatTimestamp12(clockInEv.timestamp) : clockIn
+                                            setLateReviewRecord({
+                                              id: row.record!.id,
+                                              employeeId: row.employee.id,
+                                              employeeName: `${row.employee.firstName} ${row.employee.lastName}`,
+                                              date: row.date,
+                                              scheduledStartTime: shiftStartRaw,
+                                              scheduledEndTime: matchedShift?.endTime || row.record?.scheduledEndTime,
+                                              actualClockInTime: clockInTimeStr !== "—" ? clockInTimeStr : "Late",
+                                              lateMinutes: lateInfo.minsLate || 1,
+                                              hourlyRate: row.employee.hourlyRate || 10,
+                                              siteId: activeSiteId || row.employee.primarySiteId,
+                                              siteName: site?.name || "Site",
+                                              status: row.record?.status,
+                                              correctionReason: row.record?.correctionReason,
+                                            })
+                                          }
+                                        }}
+                                      >
+                                        {EXCEPTION_LABELS[ex] || ex}
+                                        {ex === "late_arrival" && " ↗"}
+                                      </Badge>
+                                    ))
+                                  }
+                                </div>
                               )
                             }
                           </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDetailsRow(row)}
-                            className="h-8 text-xs px-2"
-                            title="View Details"
-                          >
-                            <Eye className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
-                            Details
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setDrawerRow(row)}
-                            className="h-8 text-xs px-2"
-                            title="Edit / Correct Attendance"
-                          >
-                            <Pencil className="w-3.5 h-3.5 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setHistoryRow(row)}
-                            className="h-8 text-xs px-2 text-muted-foreground"
-                            title="View Audit History"
-                          >
-                            <History className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                            History
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDetailsRow(row)}
+                              className="h-8 text-xs px-2"
+                              title="View Details"
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
+                              Details
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setDrawerRow(row)}
+                              className="h-8 text-xs px-2"
+                              title="Edit / Correct Attendance"
+                            >
+                              <Pencil className="w-3.5 h-3.5 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setHistoryRow(row)}
+                              className="h-8 text-xs px-2 text-muted-foreground"
+                              title="View Audit History"
+                            >
+                              <History className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                              History
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-    {/* Manual Entry Dialog */}
-    <AddAttendanceDialog
-      open={addDialogOpen}
-      onOpenChange={setAddDialogOpen}
-      siteId={activeSiteId}
-      onSuccess={loadDbData}
-      onOpenCorrection={(rec, emp, d, s) => {
-        setDrawerRow({
-          key: `correction-${rec.id}`,
-          employee: emp,
-          date: d,
-          shift: s,
-          record: rec,
-        })
-      }}
-    />
+      {/* Manual Entry Dialog */}
+      <AddAttendanceDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        siteId={activeSiteId}
+        onSuccess={loadDbData}
+        onOpenCorrection={(rec, emp, d, s) => {
+          setDrawerRow({
+            key: `correction-${rec.id}`,
+            employee: emp,
+            date: d,
+            shift: s,
+            record: rec,
+          })
+        }}
+      />
 
-    {/* Correction Drawer */}
-    <CorrectionDrawer
-      open={Boolean(drawerRow)}
-      onOpenChange={(o) => !o && setDrawerRow(null)}
-      employee={drawerRow?.employee ?? null}
-      siteId={activeSiteId}
-      date={drawerRow?.date ?? TODAY_ISO}
-      shift={drawerRow?.shift}
-      record={drawerRow?.record}
-    />
+      {/* Correction Drawer */}
+      <CorrectionDrawer
+        open={Boolean(drawerRow)}
+        onOpenChange={(o) => !o && setDrawerRow(null)}
+        employee={drawerRow?.employee ?? null}
+        siteId={activeSiteId}
+        date={drawerRow?.date ?? TODAY_ISO}
+        shift={drawerRow?.shift}
+        record={drawerRow?.record}
+      />
 
-    {/* Attendance Details Dialog */}
-    <AttendanceDetailsDialog
-      open={Boolean(detailsRow)}
-      onOpenChange={(o) => !o && setDetailsRow(null)}
-      employee={detailsRow?.employee ?? null}
-      siteName={site?.name || "Location"}
-      date={detailsRow?.date ?? TODAY_ISO}
-      shift={detailsRow?.shift}
-      record={detailsRow?.record}
-      onOpenHistory={() => {
-        setHistoryRow(detailsRow)
-        setDetailsRow(null)
-      }}
-      onOpenCorrection={() => {
-        setDrawerRow(detailsRow)
-        setDetailsRow(null)
-      }}
-    />
+      {/* Attendance Details Dialog */}
+      <AttendanceDetailsDialog
+        open={Boolean(detailsRow)}
+        onOpenChange={(o) => !o && setDetailsRow(null)}
+        employee={detailsRow?.employee ?? null}
+        siteName={site?.name || "Location"}
+        date={detailsRow?.date ?? TODAY_ISO}
+        shift={detailsRow?.shift}
+        record={detailsRow?.record}
+        onOpenHistory={() => {
+          setHistoryRow(detailsRow)
+          setDetailsRow(null)
+        }}
+        onOpenCorrection={() => {
+          setDrawerRow(detailsRow)
+          setDetailsRow(null)
+        }}
+      />
 
-    {/* Audit History Dialog */}
-    <AuditHistoryDialog
-      open={Boolean(historyRow)}
-      onOpenChange={(o) => !o && setHistoryRow(null)}
-      employeeName={historyRow ? `${historyRow.employee.firstName} ${historyRow.employee.lastName}` : ""}
-      date={historyRow?.date ?? TODAY_ISO}
-      audits={historyRow?.record?.audits}
-    />
+      {/* Audit History Dialog */}
+      <AuditHistoryDialog
+        open={Boolean(historyRow)}
+        onOpenChange={(o) => !o && setHistoryRow(null)}
+        employeeName={historyRow ? `${historyRow.employee.firstName} ${historyRow.employee.lastName}` : ""}
+        date={historyRow?.date ?? TODAY_ISO}
+        audits={historyRow?.record?.audits}
+      />
 
-    {/* Late Arrival Review & Deduction Dialog */}
-    <LateReviewDialog
-      open={Boolean(lateReviewRecord)}
-      onOpenChange={(o) => !o && setLateReviewRecord(null)}
-      record={lateReviewRecord}
-      onSuccess={loadDbData}
-    />
-  </AdminShell>
-)
+      {/* Late Arrival Review & Deduction Dialog */}
+      <LateReviewDialog
+        open={Boolean(lateReviewRecord)}
+        onOpenChange={(o) => !o && setLateReviewRecord(null)}
+        record={lateReviewRecord}
+        onSuccess={loadDbData}
+      />
+    </AdminShell>
+  )
 }
 
