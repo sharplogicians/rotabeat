@@ -2,7 +2,7 @@
 import { apiUrl } from '@/lib/api';
 
 import * as React from "react"
-import { AlertTriangle, Bell, Briefcase, Building2, CheckCircle2, ChevronDown, Clock, Coffee, Hash, LogOut, MapPin, Search, Settings, User, UserCog } from "lucide-react"
+import { AlertTriangle, Bell, Briefcase, Building2, CheckCircle2, ChevronDown, Clock, Coffee, Hash, LogOut, MapPin, Search, Settings, User, UserCog, X } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -110,17 +110,50 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
     )
   }, [state.notifications, isOwner, isEmpRole, user.id, state.currentSiteId])
 
-  const unreadCount = relevantNotis.filter((n) => !n.read).length + exceptions.length
-  const hasWarningNotis = relevantNotis.some((n) => !n.read && n.isWarning) || exceptions.length > 0
+  // Track dismissed attendance exception IDs in localStorage so managers can dismiss them from the alert bar
+  const [dismissedExceptionIds, setDismissedExceptionIds] = React.useState<string[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const saved = localStorage.getItem("rotabeat_dismissed_exceptions")
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+
+  const visibleExceptions = React.useMemo(() => {
+    return exceptions.filter((e) => !dismissedExceptionIds.includes(e.id))
+  }, [exceptions, dismissedExceptionIds])
+
+  // Bell badge strictly counts unread notifications so "Mark all read" cleanly clears the badge
+  const unreadCount = relevantNotis.filter((n) => !n.read).length
+  const hasWarningNotis = relevantNotis.some((n) => !n.read && n.isWarning)
 
   async function handleMarkAllRead() {
     dispatch({ type: "MARK_ALL_NOTIFICATIONS_READ" })
+    if (exceptions.length > 0) {
+      const allDismissed = Array.from(new Set([...dismissedExceptionIds, ...exceptions.map((e) => e.id)]))
+      setDismissedExceptionIds(allDismissed)
+      try {
+        localStorage.setItem("rotabeat_dismissed_exceptions", JSON.stringify(allDismissed))
+      } catch { }
+    }
     try {
       await fetch(apiUrl("/api/notifications/read"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ markAll: true }),
       })
+    } catch { }
+  }
+
+  function handleDismissException(e: React.MouseEvent, exceptionId: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    const updated = Array.from(new Set([...dismissedExceptionIds, exceptionId]))
+    setDismissedExceptionIds(updated)
+    try {
+      localStorage.setItem("rotabeat_dismissed_exceptions", JSON.stringify(updated))
     } catch { }
   }
 
@@ -382,7 +415,7 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                 </Badge>
               )}
             </div>
-            {relevantNotis.length > 0 && (
+            {(unreadCount > 0 || visibleExceptions.length > 0) && (
               <button
                 type="button"
                 className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
@@ -524,58 +557,83 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
               )
             })}
 
-            {!isEmpRole && exceptions.map((e) => {
+            {!isEmpRole && visibleExceptions.length > 0 && (
+              <div className="bg-muted/50 px-3 py-1.5 border-t border-b border-border flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                <span>Timesheet Exceptions ({visibleExceptions.length})</span>
+                <Link
+                  href="/attendance"
+                  onClick={() => setNotiOpen(false)}
+                  className="text-primary hover:underline font-semibold"
+                >
+                  View Timesheets →
+                </Link>
+              </div>
+            )}
+
+            {!isEmpRole && visibleExceptions.map((e) => {
               const emp = state.employees.find((x) => x.id === e.employeeId)
               const exSite = sites.find((s) => s.id === e.siteId)
               const exSiteName = exSite?.name || "Location"
               const isDifferentSite = Boolean(e.siteId && e.siteId !== state.currentSiteId)
 
               return (
-                <Link
+                <div
                   key={e.id}
-                  href="/attendance"
-                  onClick={() => {
-                    setNotiOpen(false)
-                    if (e.siteId && e.siteId !== state.currentSiteId) {
-                      dispatch({ type: "SET_SITE", siteId: e.siteId })
-                      toast.info(`Switched location to ${exSiteName}`)
-                    }
-                  }}
-                  className="flex items-start gap-3 p-3 text-xs hover:bg-muted/70 cursor-pointer transition-colors"
+                  className="flex items-start gap-2 p-3 text-xs hover:bg-muted/70 transition-colors group relative"
                 >
-                  <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
-                    <AlertTriangle className="size-4" />
-                  </div>
-                  <div className="flex flex-1 flex-col gap-0.5">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-semibold text-foreground">
-                        {emp ? `${emp.firstName} ${emp.lastName}` : "Employee"}
-                      </span>
-                      {exSite && (
-                        <span
-                          className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                            isDifferentSite
-                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold"
-                              : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          <Building2 className="size-3" />
-                          {exSite.name}
-                        </span>
-                      )}
+                  <Link
+                    href="/attendance"
+                    onClick={() => {
+                      setNotiOpen(false)
+                      if (e.siteId && e.siteId !== state.currentSiteId) {
+                        dispatch({ type: "SET_SITE", siteId: e.siteId })
+                        toast.info(`Switched location to ${exSiteName}`)
+                      }
+                    }}
+                    className="flex flex-1 items-start gap-3 no-underline text-inherit"
+                  >
+                    <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                      <AlertTriangle className="size-4" />
                     </div>
-                    <span className="text-muted-foreground text-[11px]">
-                      {e.exceptions.map((x) => x.replaceAll("_", " ")).join(", ")}
-                    </span>
-                    <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-destructive">
-                      Resolve Exception →
-                    </span>
-                  </div>
-                </Link>
+                    <div className="flex flex-1 flex-col gap-0.5">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-semibold text-foreground">
+                          {emp ? `${emp.firstName} ${emp.lastName}` : "Employee"}
+                        </span>
+                        {exSite && (
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              isDifferentSite
+                                ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            <Building2 className="size-3" />
+                            {exSite.name}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-muted-foreground text-[11px]">
+                        {e.exceptions.map((x) => x.replaceAll("_", " ")).join(", ")}
+                      </span>
+                      <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-destructive">
+                        Resolve Exception →
+                      </span>
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    title="Dismiss alert"
+                    onClick={(evt) => handleDismissException(evt, e.id)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
               )
             })}
 
-            {relevantNotis.length === 0 && exceptions.length === 0 && (
+            {relevantNotis.length === 0 && visibleExceptions.length === 0 && (
               <div className="px-4 py-8 text-center text-xs text-muted-foreground">
                 <CheckCircle2 className="size-6 mx-auto mb-2 text-emerald-500 opacity-80" />
                 No unread notifications or exceptions. All clear!
