@@ -688,9 +688,9 @@ export function AppHeader({ breadcrumb }: { breadcrumb?: React.ReactNode }) {
                       document.cookie = `rotabeat_last_site=${encodeURIComponent(currentSiteId)}; Path=/; Max-Age=31536000; SameSite=Lax`
                     } catch { }
                   }
-                  window.location.href = apiUrl("/login")
+                  window.location.replace(apiUrl("/login"))
                 } else {
-                  router.push("/login")
+                  router.replace("/login")
                 }
               }}
             >

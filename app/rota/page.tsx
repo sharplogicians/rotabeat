@@ -141,6 +141,7 @@ export default function RotaPage() {
             shiftId: rec.shiftId,
             events: rec.events,
             exceptions: rec.exceptions,
+            status: rec.status,
             reason: rec.correctionReason || "",
             actorName: rec.correctedBy || "System",
           })

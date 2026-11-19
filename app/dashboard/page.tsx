@@ -105,6 +105,7 @@ export default function ManagerDashboardPage() {
                 shiftId: rec.shiftId,
                 events: rec.events,
                 exceptions: Array.isArray(rec.exceptions) ? rec.exceptions : (rec.exceptionsJson ? JSON.parse(rec.exceptionsJson) : []),
+                status: rec.status,
                 reason: rec.correctionReason || "",
                 actorName: rec.correctedBy || "System",
               })

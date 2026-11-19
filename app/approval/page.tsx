@@ -187,6 +187,7 @@ export default function ApprovalPage() {
                 shiftId: rec.shiftId,
                 events: rec.events,
                 exceptions: rec.exceptions,
+                status: rec.status,
                 reason: rec.correctionReason || "",
                 actorName: rec.correctedBy || "System",
               })

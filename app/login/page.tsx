@@ -71,6 +71,23 @@ export default function LoginPage() {
     return () => clearInterval(timer)
   }, [resendCountdown])
 
+  // Auto-redirect if user already has an active authenticated session
+  React.useEffect(() => {
+    async function checkExistingSession() {
+      try {
+        const res = await fetch(apiUrl("/api/auth/me"))
+        if (res.ok) {
+          const data = await res.json()
+          if (data.authenticated && data.user) {
+            const target = data.user.role === "employee" ? "/attendance/clock" : "/dashboard"
+            router.replace(target)
+          }
+        }
+      } catch { }
+    }
+    checkExistingSession()
+  }, [router])
+
   // Load remembered credentials on mount
   React.useEffect(() => {
     if (typeof window !== "undefined") {
@@ -239,13 +256,13 @@ export default function LoginPage() {
 
         toast.success(data.message || "Signed in successfully!")
 
-        // Navigate with full window load so session cookies and DB state are freshly initialized
+        // Replace URL in history so /login is not kept in the back/forward history stack
         const targetUrl =
           data.user.role === "employee" ? apiUrl("/attendance/clock") : apiUrl("/dashboard")
         if (typeof window !== "undefined") {
-          window.location.href = targetUrl
+          window.location.replace(targetUrl)
         } else {
-          router.push(targetUrl)
+          router.replace(targetUrl)
         }
       }
     } catch (err: any) {

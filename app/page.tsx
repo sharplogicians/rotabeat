@@ -394,7 +394,7 @@ export default function LandingPage() {
             </div>
             <div>
               <p className="text-3xl sm:text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">Zero</p>
-              <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">Buddy Punching via AI</p>
+              <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">Buddy Punching</p>
             </div>
             <div>
               <p className="text-3xl sm:text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">100%</p>
@@ -708,7 +708,10 @@ export default function LandingPage() {
                   </Button>
                 </Link>
                 <Link href="/terms-of-service">
-                  <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 font-medium">
+                  <Button
+                    variant="outline"
+                    className="bg-white/10 hover:bg-white/20 text-white hover:text-white border-white/40 hover:border-white font-medium transition-colors"
+                  >
                     Terms of Service
                   </Button>
                 </Link>
@@ -766,9 +769,8 @@ export default function LandingPage() {
                 >
                   <span>{faq.q}</span>
                   <ChevronDown
-                    className={`size-4 text-slate-400 transition-transform duration-200 ${
-                      openFaq === i ? "rotate-180 text-indigo-600" : ""
-                    }`}
+                    className={`size-4 text-slate-400 transition-transform duration-200 ${openFaq === i ? "rotate-180 text-indigo-600" : ""
+                      }`}
                   />
                 </button>
                 {openFaq === i && (
@@ -892,7 +894,7 @@ export default function LandingPage() {
           </div>
 
           <div className="pt-8 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-            <p>Designed and hosted for high-reliability workforce operations.</p>
+
             <div className="flex items-center gap-4">
               <Link href="/privacy-policy" className="hover:text-indigo-600">
                 Privacy

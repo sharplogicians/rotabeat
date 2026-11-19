@@ -44,15 +44,25 @@ export function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // 2. Allow public routes through
+  // 2. If user is visiting /login, check if they are ALREADY authenticated
+  if (pathname === "/login") {
+    const session = getSessionFromRequest(request)
+    if (session) {
+      const destination = session.role === "employee" ? "/attendance/clock" : "/dashboard"
+      return NextResponse.redirect(new URL(apiUrl(destination), request.url))
+    }
+    return NextResponse.next()
+  }
+
+  // 3. Allow public routes through
   if (
-    PUBLIC_ROUTES.some((route) => route !== "/" && pathname.startsWith(route)) ||
+    PUBLIC_ROUTES.some((route) => route !== "/" && route !== "/login" && pathname.startsWith(route)) ||
     (request.method === "GET" && pathname.startsWith("/api/locations"))
   ) {
     return NextResponse.next()
   }
 
-  // 3. Allow static files and public assets
+  // 4. Allow static files and public assets
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
